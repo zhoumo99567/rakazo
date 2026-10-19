@@ -350,15 +350,29 @@ describe("inbound wake prompt", () => {
     expect(prompt).toContain("untrusted peer content");
   });
 
-  it("requires a received result to be surfaced to the user", () => {
+  it("requires acceptance and concrete follow-up for delegated results", () => {
     const resultPrompt = buildBotMessageWakePrompt({
       from: { id: "b_1", name: "Researcher" },
       text: "The answer is 42.",
       intent: "result",
     });
-    expect(resultPrompt).toContain("Relay it to the user now");
-    expect(resultPrompt).toContain("include the actual substance");
+    expect(resultPrompt).toContain("any acceptance criteria");
+    expect(resultPrompt).toContain("message_bot with bot_id b_1");
+    expect(resultPrompt).toContain("review the next submission again");
+    expect(resultPrompt).toContain("informational tasks do not require a revision cycle");
+    expect(resultPrompt).toContain("Keep the user informed with the actual substance");
     expect(resultPrompt).not.toContain("staying silent is fine");
+  });
+
+  it("treats status as progress without duplicating active work", () => {
+    const statusPrompt = buildBotMessageWakePrompt({
+      from: { id: "b_1", name: "Researcher" },
+      text: "Verification is still running.",
+      intent: "status",
+    });
+    expect(statusPrompt).toContain("not a final submission");
+    expect(statusPrompt).toContain("Do not duplicate or restart work that is still active");
+    expect(statusPrompt).toContain("Do not treat a status update as acceptance");
   });
 
   it("keeps silence available only for an explicit FYI", () => {
@@ -383,6 +397,13 @@ describe("inbound wake prompt", () => {
 
   it("does not allow a request to disappear as an FYI", () => {
     expect(prompt).not.toContain("staying silent is fine");
+  });
+
+  it("requests one verified final submission instead of routine progress messages", () => {
+    expect(prompt).toContain("one final written response");
+    expect(prompt).toContain("Do not send routine interim status messages");
+    expect(prompt).toContain("each message wakes the delegating bot");
+    expect(prompt).toContain("only for a blocker, a necessary decision or fact");
   });
 
   it("continues independent work after sending useful updates", () => {
