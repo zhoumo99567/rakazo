@@ -350,6 +350,7 @@ export async function validateConnectedModelChoice(
 }
 
 export type ModelChoice = {
+  modelCredentialId?: string | null;
   modelProvider: string | null;
   modelId: string | null;
   thinkingLevel: string | null;
@@ -372,6 +373,7 @@ export function runModelChoice(
     };
   }
   return {
+    ...(bot.modelCredentialId ? { modelCredentialId: bot.modelCredentialId } : {}),
     modelProvider: bot.modelProvider,
     modelId: bot.modelId,
     thinkingLevel: bot.thinkingLevel,
@@ -422,6 +424,7 @@ export function pinnedModelCredentialError(
   const modelId = usableModelId(choice.modelId);
   if (
     modelId &&
+    !(choice.modelCredentialId && choice.modelProvider === OPENAI_COMPATIBLE_PROVIDER_ID) &&
     !isCatalogModelChoice(choice.modelProvider, modelId) &&
     credential.defaultModel !== modelId
   ) {

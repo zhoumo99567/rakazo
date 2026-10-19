@@ -395,3 +395,52 @@ describe("selectSpaceModelPreference", () => {
     },
   );
 });
+
+describe("explicit model connections", () => {
+  it("selects the requested endpoint even when another connection has the same model", async () => {
+    const credential = {
+      id: "connection-b",
+      userId: "user",
+      provider: "openai-compatible",
+      label: "B",
+      secretId: "secret-b",
+    };
+    const findFirst = vi.fn().mockResolvedValue(credential);
+    const prisma = {
+      userModelCredential: { findFirst, findMany: vi.fn() },
+      spaceModelPreference: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn() },
+    } as unknown as PrismaClient;
+    const selected = await findModelCredential(
+      prisma,
+      { userId: "user", spaceId: "space" },
+      "openai-compatible",
+      "shared-model",
+      "connection-b",
+    );
+    expect(selected?.secretId).toBe("secret-b");
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: "connection-b", userId: "user", provider: "openai-compatible" },
+    });
+    expect(prisma.userModelCredential.findMany).not.toHaveBeenCalled();
+  });
+
+  it("does not fall back when an explicit connection is deleted or belongs to another user", async () => {
+    const prisma = {
+      userModelCredential: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn() },
+      spaceModelPreference: { findFirst: vi.fn(), findMany: vi.fn() },
+    } as unknown as PrismaClient;
+    expect(
+      await findModelCredential(
+        prisma,
+        { userId: "user", spaceId: "space" },
+        "openai-compatible",
+        "shared-model",
+        "foreign-connection",
+      ),
+    ).toBeNull();
+    expect(prisma.userModelCredential.findFirst).toHaveBeenCalledWith({
+      where: { id: "foreign-connection", userId: "user", provider: "openai-compatible" },
+    });
+    expect(prisma.spaceModelPreference.findMany).not.toHaveBeenCalled();
+  });
+});

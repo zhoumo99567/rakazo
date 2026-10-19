@@ -1243,7 +1243,16 @@ export function createRouter(deps: RouterDeps) {
         try {
           let previousPlaintext: string | undefined;
           let omitVisionModelIds = false;
-          const credential = await findModelCredential(deps.prisma, context.actor, input.provider);
+          const credential = input.createNew
+            ? null
+            : await findModelCredential(
+                deps.prisma,
+                context.actor,
+                input.provider,
+                undefined,
+                input.credentialId,
+              );
+          if (input.credentialId && !credential) throw new Error("Model connection not found");
           if (credential) {
             const secret = await deps.prisma.secret.findFirst({
               where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
@@ -1278,6 +1287,8 @@ export function createRouter(deps: RouterDeps) {
           context.actor,
           {
             provider: input.provider,
+            credentialId: input.credentialId,
+            createNew: input.createNew,
             plaintext,
             label: input.label,
             modelId: input.modelId,
@@ -1382,12 +1393,19 @@ export function createRouter(deps: RouterDeps) {
               where: {
                 spaceId: context.actor.spaceId,
                 userId: context.actor.userId,
-                credential: { provider: input.provider },
+                credential: {
+                  provider: input.provider,
+                  ...(input.credentialId ? { id: input.credentialId } : {}),
+                },
               },
               include: { credential: true },
             }),
             client.userModelCredential.findMany({
-              where: { userId: context.actor.userId, provider: input.provider },
+              where: {
+                userId: context.actor.userId,
+                provider: input.provider,
+                ...(input.credentialId ? { id: input.credentialId } : {}),
+              },
             }),
           ]);
           return {
@@ -1541,11 +1559,16 @@ export function createRouter(deps: RouterDeps) {
         await withSerializableRetry(() =>
           deps.prisma.$transaction(
             async (tx) => {
-              await tx.spaceBackupModel.deleteMany({
-                where: { userId: context.actor.userId, provider: input.provider },
-              });
+              if (!input.credentialId)
+                await tx.spaceBackupModel.deleteMany({
+                  where: { userId: context.actor.userId, provider: input.provider },
+                });
               const existing = await tx.userModelCredential.findMany({
-                where: { userId: context.actor.userId, provider: input.provider },
+                where: {
+                  userId: context.actor.userId,
+                  provider: input.provider,
+                  ...(input.credentialId ? { id: input.credentialId } : {}),
+                },
               });
               if (existing.length === 0) return;
               const ids = existing.map((row) => row.id);
@@ -1604,6 +1627,7 @@ export function createRouter(deps: RouterDeps) {
             instructions: source.instructions,
             notifyOnFinish: source.notifyOnFinish,
             color: source.color,
+            modelCredentialId: source.modelCredentialId,
             computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
             modelProvider: source.modelProvider,
             modelId: source.modelId,
@@ -1657,13 +1681,21 @@ export function createRouter(deps: RouterDeps) {
         const settingModel =
           input.modelProvider !== undefined &&
           input.modelId !== undefined &&
-          (input.modelProvider !== existing.modelProvider || input.modelId !== existing.modelId);
+          (input.modelProvider !== existing.modelProvider ||
+            input.modelId !== existing.modelId ||
+            (input.modelCredentialId !== undefined &&
+              input.modelCredentialId !== (existing.modelCredentialId ?? null)));
         if (settingModel && input.modelProvider && input.modelId) {
           const credential = await findModelCredential(
             deps.prisma,
             context.actor,
             input.modelProvider,
             input.modelId,
+            input.modelCredentialId ??
+              (input.modelCredentialId === undefined &&
+              input.modelProvider === existing.modelProvider
+                ? existing.modelCredentialId
+                : null),
           );
           if (!credential) {
             throw new ORPCError("BAD_REQUEST", { message: "Connect that model provider first" });
@@ -1672,7 +1704,11 @@ export function createRouter(deps: RouterDeps) {
           const inCatalog = knownModels.some(
             (item) => item.provider === input.modelProvider && item.id === input.modelId,
           );
-          if (!inCatalog && credential.defaultModel !== input.modelId) {
+          if (
+            !inCatalog &&
+            input.modelProvider !== OPENAI_COMPATIBLE_PROVIDER_ID &&
+            credential.defaultModel !== input.modelId
+          ) {
             throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that provider" });
           }
           if (inCatalog) {
@@ -1715,8 +1751,12 @@ export function createRouter(deps: RouterDeps) {
                 deps.prisma,
                 context.actor,
                 effectiveProvider,
+                effectiveModelId,
+                input.modelCredentialId !== undefined
+                  ? input.modelCredentialId
+                  : existing.modelCredentialId,
               );
-              if (credential && credential.defaultModel === effectiveModelId) {
+              if (credential) {
                 const secret = await deps.prisma.secret.findFirst({
                   where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
                   select: { ciphertext: true },
@@ -1764,7 +1804,17 @@ export function createRouter(deps: RouterDeps) {
             voiceId: input.voiceId,
             autoSpeak: input.autoSpeak,
             ...(input.modelProvider !== undefined
-              ? { modelProvider: input.modelProvider, modelId: input.modelId ?? null }
+              ? {
+                  modelProvider: input.modelProvider,
+                  modelId: input.modelId ?? null,
+                  modelCredentialId: input.modelProvider
+                    ? input.modelCredentialId !== undefined
+                      ? input.modelCredentialId
+                      : input.modelProvider === existing.modelProvider
+                        ? existing.modelCredentialId
+                        : null
+                    : null,
+                }
               : {}),
             ...(input.thinkingLevel !== undefined ? { thinkingLevel } : {}),
             ...(input.teamChatAmbientEnabled !== undefined
@@ -6764,6 +6814,8 @@ async function persistModelCredential(
   input: {
     provider: string;
     plaintext: string;
+    credentialId?: string;
+    createNew?: boolean;
     label?: string;
     modelId?: string;
     thinkingLevel?: string | null;
@@ -6810,11 +6862,19 @@ async function persistModelCredential(
     deps.prisma.$transaction(
       async (tx) => {
         throwIfAborted(input.signal);
-        const existing = await tx.userModelCredential.findFirst({
-          where: { userId: actor.userId, provider: input.provider },
-          orderBy: newestModelCredentialOrder,
-        });
+        const existing = input.createNew
+          ? null
+          : await tx.userModelCredential.findFirst({
+              where: {
+                userId: actor.userId,
+                provider: input.provider,
+                ...(input.credentialId ? { id: input.credentialId } : {}),
+              },
+              orderBy: newestModelCredentialOrder,
+            });
         throwIfAborted(input.signal);
+        if (input.credentialId && !existing)
+          throw new ORPCError("NOT_FOUND", { message: "Model connection not found" });
         const secret = await tx.secret.create({
           data: {
             id: stored.id,

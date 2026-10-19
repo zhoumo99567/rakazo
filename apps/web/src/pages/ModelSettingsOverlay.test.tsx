@@ -195,6 +195,7 @@ async function renderSettings() {
 }
 
 beforeEach(() => {
+  HTMLElement.prototype.scrollTo = vi.fn();
   vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
   models.list.mockResolvedValue([deepseekEntry]);
   models.credentials.mockResolvedValue([]);
@@ -395,5 +396,75 @@ it("shows a stored OpenAI-compatible key and stays empty when none is saved", as
     expect(input.placeholder).toBe("Optional");
   } finally {
     await empty.unmount();
+  }
+});
+
+it("edits the selected compatible connection and creates another without reusing its key", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "shared-model"));
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "a",
+      provider: "openai-compatible",
+      label: "Endpoint A",
+      hasKey: true,
+      isDefault: true,
+      baseUrl: "http://127.0.0.1:8081/v1",
+      modelId: "shared-model",
+    },
+    {
+      id: "b",
+      provider: "openai-compatible",
+      label: "Endpoint B",
+      hasKey: true,
+      isDefault: false,
+      baseUrl: "http://127.0.0.1:8082/v1",
+      modelId: "shared-model",
+    },
+  ]);
+  models.connect.mockResolvedValue({ id: "b" });
+  const view = await renderSettings();
+  try {
+    const select = view.container.querySelector<HTMLSelectElement>("#model-connection")!;
+    await act(async () => {
+      select.value = "b";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(view.container.querySelector<HTMLInputElement>("#model-base-url")?.value).toBe(
+      "http://127.0.0.1:8082/v1",
+    );
+    await act(async () => {
+      buttons(view.container, "Save")[0]?.click();
+    });
+    expect(models.connect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ credentialId: "b", createNew: false, apiKey: undefined }),
+    );
+    await act(async () => {
+      select.value = "";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(compatibleKeyField(view.container).placeholder).toBe("Optional");
+    await typeInto(
+      view.container.querySelector<HTMLInputElement>("#model-base-url")!,
+      "http://127.0.0.1:8083/v1",
+    );
+    await typeInto(
+      view.container.querySelector<HTMLInputElement>('[aria-label="Model id"]')!,
+      "third-model",
+    );
+    await typeInto(compatibleKeyField(view.container), "fake-third-key");
+    await act(async () => {
+      buttons(view.container, "Save")[0]?.click();
+    });
+    expect(models.connect).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        credentialId: undefined,
+        createNew: true,
+        apiKey: "fake-third-key",
+        baseUrl: "http://127.0.0.1:8083/v1",
+      }),
+    );
+  } finally {
+    await view.unmount();
   }
 });

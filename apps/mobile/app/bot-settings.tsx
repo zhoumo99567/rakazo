@@ -83,7 +83,7 @@ export default function BotSettingsScreen() {
         setComputerMode(next.computerMode);
         setModelKey(
           next.modelProvider && next.modelId
-            ? modelOptionKey(next.modelProvider, next.modelId)
+            ? modelOptionKey(next.modelProvider, next.modelId, next.modelCredentialId)
             : "",
         );
         setThinkingLevel(next.thinkingLevel ?? "");
@@ -112,18 +112,19 @@ export default function BotSettingsScreen() {
   }, [t]);
 
   const connectedOptions = useMemo(
-    () => connectedModelChoices(credentials, catalog),
+    () => connectedModelChoices(credentials, catalog, true),
     [catalog, credentials],
   );
   const storedModel = modelKey ? parseModelOptionKey(modelKey) : null;
   const selectedModel = storedModel
     ? {
+        credentialId: storedModel.credentialId,
         provider: storedModel.provider,
         modelId: resolveSelectableModelId(catalog, storedModel.provider, storedModel.modelId),
       }
     : null;
   const selectedModelKey = selectedModel
-    ? modelOptionKey(selectedModel.provider, selectedModel.modelId)
+    ? modelOptionKey(selectedModel.provider, selectedModel.modelId, selectedModel.credentialId)
     : "";
 
   const effectiveProvider = selectedModel?.provider ?? me?.defaultProvider ?? null;
@@ -136,8 +137,10 @@ export default function BotSettingsScreen() {
             resolveSelectableModelId(catalog, entry.provider, entry.id) === effectiveModelId,
         )
       : undefined;
-  const effectiveCredential = credentials.find(
-    (entry) => entry.provider === effectiveProvider && entry.modelId === effectiveModelId,
+  const effectiveCredential = credentials.find((entry) =>
+    selectedModel?.credentialId
+      ? entry.id === selectedModel.credentialId
+      : entry.provider === effectiveProvider && entry.modelId === effectiveModelId,
   );
   const thinkingOptions = (
     effectiveCredential?.thinkingLevels ??
@@ -285,6 +288,7 @@ export default function BotSettingsScreen() {
         instructions?: string;
         expectedInstructions?: string;
         color?: string;
+        modelCredentialId?: string | null;
         modelProvider?: string | null;
         modelId?: string | null;
         thinkingLevel?: ThinkingLevel | null;
@@ -302,9 +306,11 @@ export default function BotSettingsScreen() {
       if (color !== bot.color) input.color = color;
       const modelChanged =
         (selected?.provider ?? null) !== (bot.modelProvider ?? null) ||
-        (selected?.modelId ?? null) !== (bot.modelId ?? null);
+        (selected?.modelId ?? null) !== (bot.modelId ?? null) ||
+        (selected?.credentialId ?? null) !== (bot.modelCredentialId ?? null);
       const thinkingChanged = (thinkingLevel || null) !== (bot.thinkingLevel ?? null);
       if (modelChanged) {
+        input.modelCredentialId = selected?.credentialId ?? null;
         input.modelProvider = selected?.provider ?? null;
         input.modelId = selected?.modelId ?? null;
       }
@@ -589,6 +595,19 @@ export default function BotSettingsScreen() {
                 />
               ) : null}
             </View>
+            {selectedModel?.credentialId ? (
+              <TextInput
+                accessibilityLabel={t("Model ID")}
+                value={selectedModel.modelId}
+                style={{ color: tokens.foreground, padding: 12 }}
+                autoCapitalize="none"
+                onChangeText={(value) =>
+                  setModelKey(
+                    modelOptionKey(selectedModel.provider, value, selectedModel.credentialId),
+                  )
+                }
+              />
+            ) : null}
             {modelMetaError ? (
               <Text style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13 }}>
                 {modelMetaError}

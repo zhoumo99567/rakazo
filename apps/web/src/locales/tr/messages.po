@@ -1305,6 +1305,14 @@ msgstr "Bağlandı. Araçları bir sonraki mesajından itibaren kullanılabilir.
 msgid "Connecting…"
 msgstr "Bağlanıyor…"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection"
+msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection name"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Connection test failed."
 msgstr "Bağlantı testi başarısız."
@@ -2979,6 +2987,10 @@ msgstr "\"{modelId}\" modeli listelenmedi."
 msgid "Model id"
 msgstr "Model kimliği"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Model ID"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Model options"
 msgstr "Model seçenekleri"
@@ -3088,6 +3100,10 @@ msgstr ""
 #: src/pages/shell/bot-panel.tsx
 msgid "New bot"
 msgstr "Yeni bot"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "New connection"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"

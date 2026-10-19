@@ -278,3 +278,33 @@ describe("filterModelCatalog", () => {
     expect(filterModelCatalog(models, "gemini")).toEqual([]);
   });
 });
+
+describe("connection-bound model choices", () => {
+  it("keeps identical model names on two endpoints separately selectable", () => {
+    const choices = connectedModelChoices(
+      [
+        {
+          id: "connection-a",
+          provider: "openai-compatible",
+          label: "Endpoint A",
+          modelId: "shared-model",
+        },
+        {
+          id: "connection-b",
+          provider: "openai-compatible",
+          label: "Endpoint B",
+          modelId: "shared-model",
+        },
+      ],
+      [],
+      true,
+    );
+    expect(choices).toHaveLength(2);
+    expect(choices[0]?.key).not.toBe(choices[1]?.key);
+    expect(choices.map((choice) => choice.credentialId)).toEqual(["connection-a", "connection-b"]);
+    expect(choices.map((choice) => choice.label)).toEqual([
+      "Endpoint A · shared-model",
+      "Endpoint B · shared-model",
+    ]);
+  });
+});

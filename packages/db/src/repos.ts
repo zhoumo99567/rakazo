@@ -62,6 +62,7 @@ function mapBot(
     computer: { scope: string } | null;
     voiceId?: string | null;
     autoSpeak?: boolean;
+    modelCredentialId?: string | null;
     modelProvider?: string | null;
     modelId?: string | null;
     thinkingLevel?: string | null;
@@ -104,6 +105,7 @@ function mapBot(
     updatedAt: bot.updatedAt.toISOString(),
     voiceId: bot.voiceId ?? null,
     autoSpeak: bot.autoSpeak ?? false,
+    modelCredentialId: bot.modelCredentialId ?? null,
     modelProvider: bot.modelProvider ?? null,
     modelId: bot.modelId ?? null,
     thinkingLevel: (bot.thinkingLevel as Bot["thinkingLevel"]) ?? null,
@@ -420,6 +422,7 @@ export function createRepos(prisma: PrismaClient) {
         parentBotId?: string | null;
         computerMode?: ComputerMode;
         spawnKey?: string;
+        modelCredentialId?: string | null;
         modelProvider?: string | null;
         modelId?: string | null;
         thinkingLevel?: string | null;
@@ -438,6 +441,7 @@ export function createRepos(prisma: PrismaClient) {
         });
         color = BOT_COLORS[count % BOT_COLORS.length] ?? BOT_COLORS[0];
       }
+      let modelCredentialId = input.modelCredentialId ?? null;
       let modelProvider = input.modelProvider ?? null;
       let modelId = input.modelId ?? null;
       let thinkingLevel = input.thinkingLevel ?? null;
@@ -452,6 +456,7 @@ export function createRepos(prisma: PrismaClient) {
         });
         if (!parent) throw new IsolationError();
         if (!modelId) {
+          modelCredentialId = parent.modelCredentialId ?? null;
           modelProvider = parent.modelProvider ?? null;
           modelId = parent.modelId ?? null;
         }
@@ -494,6 +499,7 @@ export function createRepos(prisma: PrismaClient) {
               parentBotId: input.parentBotId ?? null,
               computerId: teamComputer.id,
               spawnKey: input.spawnKey,
+              modelCredentialId,
               modelProvider,
               modelId,
               thinkingLevel,

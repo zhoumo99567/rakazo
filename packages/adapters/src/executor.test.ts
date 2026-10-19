@@ -3106,3 +3106,67 @@ describe("ticket board tool capability", () => {
       expect(backgroundNames).not.toContain(name);
   });
 });
+
+it("resolves each bot's compatible endpoint and key even when model names match", async () => {
+  const provider = "openai-compatible";
+  const connections = ["a", "b"].map((id) => ({
+    ...modelPreference({
+      provider,
+      secretId: `secret-${id}`,
+      modelId: "shared-model",
+      isDefault: id === "a",
+    }).credential,
+    id,
+  }));
+  const secrets = new Map(
+    connections.map((connection, index) => [
+      connection.secretId,
+      serializeModelSecret({
+        kind: "openai_compatible",
+        baseUrl: `http://127.0.0.1:${8081 + index}/v1`,
+        apiKey: `fake-key-${connection.id}`,
+      }),
+    ]),
+  );
+  const prisma = {
+    bot: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+        modelCredentialId: where.id,
+        modelProvider: provider,
+        modelId: "shared-model",
+        thinkingLevel: null,
+      })),
+    },
+    userModelCredential: {
+      findFirst: vi.fn(
+        async ({ where }: { where: { id: string } }) =>
+          connections.find((entry) => entry.id === where.id) ?? null,
+      ),
+    },
+    spaceModelPreference: { findFirst: vi.fn(async () => null) },
+    deploymentSettings: { findUnique: vi.fn(async () => null) },
+    secret: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+        id: where.id,
+        ciphertext: secrets.get(where.id),
+      })),
+    },
+  } as unknown as PrismaClient;
+  const executor = createRunExecutor({
+    prisma,
+    secretStore: { load: vi.fn((ciphertext) => ciphertext), put: vi.fn() },
+  } as unknown as Parameters<typeof createRunExecutor>[0]);
+  for (const [index, connection] of connections.entries()) {
+    await expect(
+      executor.resolveModel({ userId: "user-1", spaceId: "ws-1", botId: connection.id }),
+    ).resolves.toMatchObject({
+      id: "shared-model",
+      baseUrl: `http://127.0.0.1:${8081 + index}/v1`,
+      apiKey: `fake-key-${connection.id}`,
+    });
+  }
+  connections.pop();
+  await expect(
+    executor.resolveModel({ userId: "user-1", spaceId: "ws-1", botId: "b" }),
+  ).rejects.toThrow("Model connection is no longer available");
+});

@@ -422,6 +422,7 @@ model Bot {
   computerSwitching Boolean           @default(false)
   voiceId           String?
   autoSpeak         Boolean           @default(false)
+  modelCredentialId String?
   modelProvider     String?
   modelId           String?
   thinkingLevel     String?

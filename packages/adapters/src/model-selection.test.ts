@@ -1053,3 +1053,18 @@ describe("connected model validation", () => {
     ).resolves.toBe("Unknown model for that provider");
   });
 });
+
+it("preserves a bot's explicit connection when a routine follows the bot", () => {
+  const chosen = runModelChoice(
+    { modelProvider: null, modelId: null, thinkingLevel: null },
+    {
+      modelCredentialId: "connection-b",
+      modelProvider: "openai-compatible",
+      modelId: "shared-model",
+      thinkingLevel: null,
+    },
+  );
+  expect(chosen.modelCredentialId).toBe("connection-b");
+  expect(pinnedModelCredentialError(chosen, null)).toBe("Connect that model provider first");
+  expect(pinnedModelCredentialError(chosen, { defaultModel: "different-model" })).toBeUndefined();
+});

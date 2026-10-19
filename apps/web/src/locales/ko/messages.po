@@ -1305,6 +1305,14 @@ msgstr "연결되었습니다. 다음 메시지부터 이 도구를 사용할 �
 msgid "Connecting…"
 msgstr "연결 중…"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection"
+msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection name"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Connection test failed."
 msgstr "연결 테스트에 실패했습니다."
@@ -2979,6 +2987,10 @@ msgstr "\"{modelId}\" 모델이 목록에 없습니다."
 msgid "Model id"
 msgstr "모델 ID"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Model ID"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Model options"
 msgstr "모델 선택지"
@@ -3088,6 +3100,10 @@ msgstr ""
 #: src/pages/shell/bot-panel.tsx
 msgid "New bot"
 msgstr "새 Bot 만들기"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "New connection"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"

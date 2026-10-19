@@ -220,6 +220,7 @@ export function BotSettings({
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
     voiceId?: string | null;
+    modelCredentialId?: string | null;
     modelProvider?: string | null;
     modelId?: string | null;
     thinkingLevel?: ThinkingLevel | null;
@@ -247,7 +248,9 @@ export function BotSettings({
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
   const [modelKey, setModelKey] = useState(
-    bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
+    bot.modelProvider && bot.modelId
+      ? modelOptionKey(bot.modelProvider, bot.modelId, bot.modelCredentialId)
+      : "",
   );
   const [thinkingLevel, setThinkingLevel] = useState(bot.thinkingLevel ?? "");
   const [disabledBuiltinTools, setDisabledBuiltinTools] = useState<string[]>(
@@ -301,16 +304,17 @@ export function BotSettings({
       .catch(() => undefined);
   }, []);
 
-  const connectedOptions = connectedModelChoices(credentials, catalog);
+  const connectedOptions = connectedModelChoices(credentials, catalog, true);
   const storedModel = modelKey ? parseModelOptionKey(modelKey) : null;
   const selectedModel = storedModel
     ? {
+        credentialId: storedModel.credentialId,
         provider: storedModel.provider,
         modelId: resolveSelectableModelId(catalog, storedModel.provider, storedModel.modelId),
       }
     : null;
   const selectedModelKey = selectedModel
-    ? modelOptionKey(selectedModel.provider, selectedModel.modelId)
+    ? modelOptionKey(selectedModel.provider, selectedModel.modelId, selectedModel.credentialId)
     : "";
 
   const effectiveProvider = selectedModel?.provider ?? me?.defaultProvider ?? null;
@@ -323,8 +327,10 @@ export function BotSettings({
             resolveSelectableModelId(catalog, entry.provider, entry.id) === effectiveModelId,
         )
       : undefined;
-  const effectiveCredential = credentials.find(
-    (entry) => entry.provider === effectiveProvider && entry.modelId === effectiveModelId,
+  const effectiveCredential = credentials.find((entry) =>
+    selectedModel?.credentialId
+      ? entry.id === selectedModel.credentialId
+      : entry.provider === effectiveProvider && entry.modelId === effectiveModelId,
   );
   const thinkingOptions = (
     effectiveCredential?.thinkingLevels ??
@@ -371,6 +377,7 @@ export function BotSettings({
         memoryScope,
         autoSpeak,
         voiceId: voiceId || null,
+        modelCredentialId: selected?.credentialId ?? null,
         modelProvider: selected?.provider ?? null,
         modelId: selected?.modelId ?? null,
         ...(modelMetaReady
@@ -597,6 +604,25 @@ export function BotSettings({
             ))}
           </NativeSelect>
         </label>
+        {selectedModel?.credentialId ? (
+          <label className={fieldLabelClass} htmlFor={`${ids}-connection-model`}>
+            <Trans>Model ID</Trans>
+            <Input
+              id={`${ids}-connection-model`}
+              className="mt-2"
+              value={selectedModel.modelId}
+              onChange={(event) =>
+                setModelKey(
+                  modelOptionKey(
+                    selectedModel.provider,
+                    event.target.value,
+                    selectedModel.credentialId,
+                  ),
+                )
+              }
+            />
+          </label>
+        ) : null}
         {thinkingOptions.length ? (
           <label htmlFor={`${ids}-thinking`} className={fieldLabelClass}>
             <Trans>Thinking</Trans>

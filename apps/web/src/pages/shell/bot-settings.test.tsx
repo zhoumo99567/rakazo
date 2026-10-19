@@ -63,6 +63,7 @@ vi.mock("../KnowledgeSection", () => ({ KnowledgeSection: () => null }));
 vi.mock("./avatar-studio-popover", () => ({ AvatarStudioPopover: () => null }));
 vi.mock("./bot-credentials", () => ({ BotCredentialsSection: () => null }));
 
+import { rpc } from "../../lib/rpc";
 import { BotSettings } from "./bot-panel";
 
 const bot = {
@@ -426,4 +427,51 @@ describe("BotSettings disabled tools", () => {
     expect(container.textContent).toContain("Network failed");
     expect(container.textContent).not.toContain("Unknown tool");
   });
+});
+
+it("binds the bot to a selected connection with its own model ID", async () => {
+  vi.mocked(rpc.models.credentials).mockResolvedValueOnce([
+    {
+      id: "a",
+      provider: "openai-compatible",
+      label: "Endpoint A",
+      modelId: "shared-model",
+      hasKey: true,
+      isDefault: true,
+    },
+    {
+      id: "b",
+      provider: "openai-compatible",
+      label: "Endpoint B",
+      modelId: "shared-model",
+      hasKey: true,
+      isDefault: false,
+    },
+  ] as never);
+  const onSave = vi.fn(async () => undefined);
+  await renderSettings(onSave);
+  const select = container.querySelector<HTMLSelectElement>('select[id$="-model"]')!;
+  expect(select.options.length).toBe(3);
+  await act(async () => {
+    select.value = JSON.stringify(["openai-compatible", "shared-model", "b"]);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () => {
+    setField(
+      container.querySelector<HTMLInputElement>('input[id$="-connection-model"]')!,
+      "another-model",
+    );
+  });
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Save")!
+      .click();
+  });
+  expect(onSave).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      modelCredentialId: "b",
+      modelProvider: "openai-compatible",
+      modelId: "another-model",
+    }),
+  );
 });
