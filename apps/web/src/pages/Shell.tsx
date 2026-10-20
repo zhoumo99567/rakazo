@@ -158,6 +158,7 @@ import {
   HoldToTalkStrip,
   useHoldToTalk,
 } from "../components/composer/HoldToTalk";
+import { ComputerWorkspace } from "../components/computer/ComputerWorkspace";
 import { lazyOverlay } from "../components/ErrorBoundary";
 import { MessageHoverMetadata } from "../components/MessageHoverMetadata";
 import {
@@ -219,6 +220,7 @@ import {
   loadComputerScreen,
   screenIframeSandbox,
 } from "../lib/computer-screen";
+import { publishComputerCommand } from "../lib/computer-workspace";
 import { desktopBridge } from "../lib/desktop";
 import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { localTimezone } from "../lib/local-timezone";
@@ -5219,38 +5221,52 @@ function SpaceShell() {
               </div>
             ) : null}
             <div className="relative min-h-0 flex-1 bg-background">
-              {computer?.kind === "desktop" ? (
-                <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80" />
-              ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
-                <>
-                  <iframe
-                    title={t`Bot screen`}
-                    src={embeddedScreenUrl}
-                    sandbox={screenIframeSandbox(embeddedScreenUrl)}
-                    className="h-full w-full border-0 bg-black"
-                    allow="clipboard-read; clipboard-write; fullscreen"
-                    style={{
-                      pointerEvents: recordingSkill || !hasControl ? "none" : "auto",
-                    }}
-                  />
-                  {computerBot ? (
-                    <TeachCaptureOverlay
-                      botId={computerBot.id}
-                      skill={recordingSkill}
-                      enabled={Boolean(recordingSkill)}
-                      screenWidth={computer?.screenWidth}
-                      screenHeight={computer?.screenHeight}
+              <ComputerWorkspace
+                botId={computerBot.id}
+                computer={computer}
+                hasControl={hasControl}
+                dock={!recordingSkill}
+                onTakeControl={
+                  computer?.state === "running" &&
+                  !hasControl &&
+                  !computerTakeoverBlocked(computer, snapshot?.run?.status)
+                    ? () => openComputer(computerBot.id, true)
+                    : undefined
+                }
+              >
+                {computer?.kind === "desktop" ? (
+                  <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80" />
+                ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
+                  <>
+                    <iframe
+                      title={t`Bot screen`}
+                      src={embeddedScreenUrl}
+                      sandbox={screenIframeSandbox(embeddedScreenUrl)}
+                      className="h-full w-full border-0 bg-black"
+                      allow="clipboard-read; clipboard-write; fullscreen"
+                      style={{
+                        pointerEvents: recordingSkill || !hasControl ? "none" : "auto",
+                      }}
                     />
-                  ) : null}
-                </>
-              ) : (
-                <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
-                  {computerScreenError ??
-                    (computer?.state === "suspended"
-                      ? t`Computer is asleep`
-                      : computerLabel(computer?.mode, computerBot.name))}
-                </div>
-              )}
+                    {computerBot ? (
+                      <TeachCaptureOverlay
+                        botId={computerBot.id}
+                        skill={recordingSkill}
+                        enabled={Boolean(recordingSkill)}
+                        screenWidth={computer?.screenWidth}
+                        screenHeight={computer?.screenHeight}
+                      />
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
+                    {computerScreenError ??
+                      (computer?.state === "suspended"
+                        ? t`Computer is asleep`
+                        : computerLabel(computer?.mode, computerBot.name))}
+                  </div>
+                )}
+              </ComputerWorkspace>
             </div>
           </div>
         </div>
@@ -7064,6 +7080,7 @@ function applyThreadEvent(
   snapshotRef: MutableRefObject<ThreadSnapshot | null>,
   computerRef: MutableRefObject<ComputerStatus | null>,
 ) {
+  publishComputerCommand(event);
   if (isThreadSnapshotEvent(event)) {
     const next = reduceThreadSnapshot(snapshotRef.current, event);
     commitSnapshot(next);
