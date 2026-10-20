@@ -132,6 +132,7 @@ export async function cancelComputerRunWork(
   computerId: string,
   runId: string,
   context: AdapterContext,
+  strict = false,
 ): Promise<void> {
   if (!computerId || !runId) return;
   try {
@@ -148,7 +149,8 @@ export async function cancelComputerRunWork(
     )) {
       // Drain so providers can finish the exec session.
     }
-  } catch {
+  } catch (error) {
+    if (strict) throw error;
     // Best effort after the run is already cancelled.
   }
 }

@@ -966,6 +966,7 @@ export type MobileBot = Pick<
   | "thinkingLevel"
   | "autoSpeak"
   | "fleetManagement"
+  | "managementRole"
 > &
   Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions">>;
 

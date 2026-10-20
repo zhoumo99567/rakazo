@@ -107,6 +107,13 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(settings.getByRole("button", { name: "Update computer" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "27a-settings-panel");
   await settings.getByText("Advanced", { exact: true }).click();
+  const role = settings.getByRole("combobox", { name: "Role", exact: true });
+  await expect(role).toHaveValue("member");
+  await role.selectOption("chief");
+  await expect(role).toHaveValue("chief");
+  await settings.getByText("Tasks", { exact: true }).click();
+  await expect(settings.getByRole("button", { name: "Refresh", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "27d-chief-role-and-tasks");
   const disabledTools = settings.getByLabel("Disabled tools");
   await expect(disabledTools).toBeVisible();
   await disabledTools.fill("not_a_tool");
@@ -189,7 +196,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await captureScreenshot(page, testInfo, "31-deleted-bot-fallback");
 });
 
-test("fleet management switch persists", async ({ page }, testInfo) => {
+test("group management persists independently of the bot role", async ({ page }, testInfo) => {
   await signup(
     page,
     `fleet-management-${Date.now()}@rakazo.test`,
@@ -204,21 +211,14 @@ test("fleet management switch persists", async ({ page }, testInfo) => {
     await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
     const settings = page.getByTestId("bot-settings");
     await settings.getByText("Advanced", { exact: true }).click();
-    return settings.getByRole("switch", { name: "Fleet management" });
+    return settings.getByRole("switch", { name: "Group management" });
   };
 
   const fleetSwitch = await openAdvanced();
   await expect(fleetSwitch).not.toBeChecked();
-  await expect(
-    page.getByText(
-      "Lets this bot organize, retune and schedule the bots it creates. You approve each change.",
-    ),
-  ).toBeVisible();
-  await page
-    .getByText(
-      "Lets this bot organize, retune and schedule the bots it creates. You approve each change.",
-    )
-    .scrollIntoViewIfNeeded();
+  const role = page.getByRole("combobox", { name: "Role", exact: true });
+  await expect(role).toHaveValue("member");
+  await fleetSwitch.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "32-fleet-management-switch-off");
   await fleetSwitch.click();
   await expect(fleetSwitch).toBeChecked();
@@ -229,10 +229,7 @@ test("fleet management switch persists", async ({ page }, testInfo) => {
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   const reloadedSwitch = await openAdvanced();
   await expect(reloadedSwitch).toBeChecked();
-  await page
-    .getByText(
-      "Lets this bot organize, retune and schedule the bots it creates. You approve each change.",
-    )
-    .scrollIntoViewIfNeeded();
+  await expect(role).toHaveValue("member");
+  await reloadedSwitch.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "32-fleet-management-switch");
 });

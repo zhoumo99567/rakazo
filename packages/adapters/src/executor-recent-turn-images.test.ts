@@ -183,7 +183,10 @@ async function runWithModel(
       ),
       findUnique: vi.fn(async () => null),
     },
-    task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Look again" })) },
+    task: {
+      findUnique: vi.fn(async () => ({ protocol: "legacy" })),
+      findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Look again" })),
+    },
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
     connection: { findMany: vi.fn(async () => []) },
     spaceModelPreference: {

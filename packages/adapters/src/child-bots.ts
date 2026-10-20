@@ -13,16 +13,20 @@ import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   GROUP_MEMBER_MIN,
+  TASK_PROTOCOL,
 } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import type { BotManager, Prisma, PrismaClient } from "@rakazo/db";
 import {
+  cancelCoordinatedTask,
   cancelRunsInTransaction,
   computerScopeKey,
   createRepos,
   createThreadMessageInTransaction,
+  delegateTask,
   expireComputerExecutionLeases,
-  type Prisma,
-  type PrismaClient,
+  lockBotManagement,
+  requireBotManager,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -37,6 +41,7 @@ import {
 } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
 import { removePiBotSessions } from "./pi-session.js";
+import { reconcileTaskCleanup } from "./task-cleanup.js";
 
 export function confirmSpawnedBotName(confirmName: string, botName: string) {
   if (confirmName !== botName) {
@@ -61,6 +66,8 @@ export async function spawnBot(
       userId: string;
     };
     runId: string;
+    leaseOwner?: string | null;
+    leaseFence?: number;
     spawnKey: string;
     name: string;
     title?: string;
@@ -89,6 +96,13 @@ export async function spawnBot(
       instructions: (input.instructions ?? "").trim().slice(0, BOT_INSTRUCTIONS_MAX_LENGTH),
       notifyOnFinish: true,
       parentBotId: input.spawnedBy.id,
+      manager: {
+        botId: input.spawnedBy.id,
+        userId: actor.userId,
+        runId: input.runId,
+        leaseOwner: input.leaseOwner,
+        leaseFence: input.leaseFence,
+      },
       spawnKey: input.spawnKey,
       computerMode: input.computerMode,
       initialMessage: {
@@ -107,7 +121,22 @@ export async function spawnBot(
       },
       include: { thread: true },
     });
-    if (!existing) throw error;
+    if (
+      !existing ||
+      existing.userId !== actor.userId ||
+      existing.parentBotId !== input.spawnedBy.id ||
+      existing.archivedAt
+    )
+      throw error;
+    await deps.prisma.$transaction((tx) =>
+      requireBotManager(tx, actor.spaceId, {
+        botId: input.spawnedBy.id,
+        userId: actor.userId,
+        runId: input.runId,
+        leaseOwner: input.leaseOwner,
+        leaseFence: input.leaseFence,
+      }),
+    );
     if (!existing.thread) throw new Error(`Spawned bot ${existing.id} is missing its thread`);
     duplicate = true;
     created = {
@@ -120,15 +149,29 @@ export async function spawnBot(
 
   const prompt = (input.prompt ?? "").trim();
   if (prompt) {
-    const run = await ensureSpawnRun(deps.prisma, {
-      spaceId: input.spawnedBy.spaceId,
-      userId: input.spawnedBy.userId,
-      botId: created.id,
-      threadId: created.threadId,
-      sourceRunId: input.runId,
-      spawnKey: input.spawnKey,
-      prompt,
+    const source = await deps.prisma.run.findUniqueOrThrow({
+      where: { id: input.runId },
+      include: { task: true },
     });
+    const delegated =
+      source.task.protocol === TASK_PROTOCOL
+        ? await delegateTask(
+            deps.prisma,
+            { ...source, leaseOwner: input.leaseOwner, leaseFence: input.leaseFence },
+            { botId: created.id, prompt, deliveryKey: `spawn:${input.spawnKey}` },
+          )
+        : null;
+    const run = delegated
+      ? { id: delegated.runId! }
+      : await ensureSpawnRun(deps.prisma, {
+          spaceId: input.spawnedBy.spaceId,
+          userId: input.spawnedBy.userId,
+          botId: created.id,
+          threadId: created.threadId,
+          sourceRunId: input.runId,
+          spawnKey: input.spawnKey,
+          prompt,
+        });
     await deps.jobs
       .enqueue(runContinueJob(run.id))
       .catch((error) => getLogger().error("spawned bot enqueue", error));
@@ -236,6 +279,10 @@ export async function archiveSpawnedBot(
   deps: BotLifecycleDeps,
   input: {
     spawnedByBotId: string;
+    runId: string;
+    operationKey: string;
+    leaseOwner?: string | null;
+    leaseFence?: number;
     userId: string;
     spaceId: string;
     confirmName: string;
@@ -249,21 +296,17 @@ export async function archiveSpawnedBot(
   }
 
   const spawned = await deps.prisma.bot.findMany({
-    where: createdByWhere({
-      botId: input.spawnedByBotId,
-      userId: input.userId,
-      spaceId: input.spaceId,
-    }),
+    where: { spaceId: input.spaceId, userId: input.userId, managementRole: "member" },
   });
   const matches = input.botId
     ? spawned.filter((bot) => bot.id === input.botId)
     : spawned.filter((bot) => bot.name === confirmName);
 
   if (input.botId && matches.length === 0) {
-    return { error: "That bot was not created by this bot. Refusing to archive." };
+    return { error: "No ordinary bot with that id in this space." };
   }
   if (!input.botId && matches.length === 0) {
-    return { error: `This bot did not create a bot named "${confirmName}". Refusing to archive.` };
+    return { error: `No ordinary bot named "${confirmName}". Refusing to archive.` };
   }
   if (!input.botId && matches.length > 1) {
     return {
@@ -278,7 +321,16 @@ export async function archiveSpawnedBot(
     return { error: "A bot cannot archive itself with archive_bot." };
   }
 
-  await archiveBot(deps, target, context);
+  await archiveBot(deps, target, context, {
+    manager: {
+      botId: input.spawnedByBotId,
+      userId: input.userId,
+      runId: input.runId,
+      leaseOwner: input.leaseOwner,
+      leaseFence: input.leaseFence,
+    },
+    operationKey: input.operationKey,
+  });
   return { ok: true as const, botId: target.id, name: target.name };
 }
 
@@ -286,6 +338,7 @@ export async function archiveBot(
   deps: BotLifecycleDeps,
   bot: LifecycleBot,
   context: AdapterContext,
+  operation?: { manager: BotManager; operationKey: string },
 ) {
   const [dedicated, activeRuns, activeRoutines] = await Promise.all([
     deps.prisma.computer.findUnique({
@@ -300,60 +353,185 @@ export async function archiveBot(
       select: { id: true },
     }),
   ]);
-  const runIds = activeRuns.map((run) => run.id);
+  let runIds = activeRuns.map((run) => run.id);
+  const cleanupRunIds: string[] = [];
   const now = new Date();
-  await deps.prisma.$transaction(async (tx) => {
-    await tx.run.updateMany({
-      where: { id: { in: runIds } },
-      data: { status: "cancelled", completedAt: now },
-    });
-    await tx.task.updateMany({
-      where: { runs: { some: { id: { in: runIds } } } },
-      data: { status: "cancelled" },
-    });
-    await tx.routine.updateMany({
-      where: { botId: bot.id },
-      data: { active: false, nextRunAt: null },
-    });
-    await expireComputerExecutionLeases(tx, { botId: bot.id });
-    await tx.computer.updateMany({
-      where: {
-        OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
-      },
-      data: releasedComputerLease(),
-    });
-    if (dedicated) {
+  let replayArchive: LifecycleBot | undefined;
+  await withTransactionRetry(() =>
+    deps.prisma.$transaction(async (tx) => {
+      const targetThread = await tx.thread.findUnique({
+        where: { botId: bot.id },
+        select: { id: true },
+      });
+      const sourceRun = operation
+        ? await tx.run.findUnique({
+            where: { id: operation.manager.runId },
+            select: { threadId: true },
+          })
+        : null;
+      for (const id of [
+        ...new Set(
+          [targetThread?.id, sourceRun?.threadId].filter((id): id is string => Boolean(id)),
+        ),
+      ].sort()) {
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${id} FOR UPDATE`;
+      }
+      const current = await tx.bot.findUniqueOrThrow({
+        where: { id: bot.id },
+        include: { thread: true },
+      });
+      runIds = (
+        await tx.run.findMany({
+          where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+          select: { id: true },
+        })
+      ).map((run) => run.id);
+      const tasks = await tx.task.findMany({
+        where: {
+          botId: bot.id,
+          protocol: TASK_PROTOCOL,
+          status: { notIn: ["completed", "failed", "cancelled"] },
+        },
+      });
+      if (
+        current.archivedAt &&
+        (!operation || current.archiveOperationKey === operation.operationKey)
+      ) {
+        // A replay may finish the existing cleanup, but must never re-archive a
+        // bot restored after this read or cancel its newly started work.
+        replayArchive = { ...bot, archivedAt: current.archivedAt };
+        return;
+      }
+      if (operation) {
+        await lockBotManagement(tx, bot.spaceId, operation.manager, {
+          threadIds: current.thread ? [current.thread.id] : [],
+          taskIds: tasks.map((task) => task.id),
+          targetBotId: bot.id,
+        });
+      }
+      for (const task of tasks.sort((a, b) =>
+        (a.rootTaskId ?? a.id).localeCompare(b.rootTaskId ?? b.id),
+      )) {
+        const cancelled = await cancelCoordinatedTask(tx, task.id, "The bot was archived.");
+        if (cancelled) cleanupRunIds.push(...cancelled.cancelledRunIds);
+      }
+      await tx.run.updateMany({
+        where: { id: { in: runIds } },
+        data: { status: "cancelled", completedAt: now },
+      });
+      await tx.task.updateMany({
+        where: { runs: { some: { id: { in: runIds } } } },
+        data: { status: "cancelled" },
+      });
+      await tx.routine.updateMany({
+        where: { botId: bot.id },
+        data: { active: false, nextRunAt: null },
+      });
+      await expireComputerExecutionLeases(tx, { botId: bot.id });
       await tx.computer.updateMany({
-        where: { id: dedicated.id, state: { not: "running" } },
+        where: {
+          OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
+        },
+        data: releasedComputerLease(),
+      });
+      if (dedicated) {
+        await tx.computer.updateMany({
+          where: { id: dedicated.id, state: { not: "running" } },
+          data: { state: "stopped" },
+        });
+      }
+      await tx.bot.update({
+        where: { id: bot.id },
+        data: {
+          archivedAt: now,
+          archiveCleanupPending: true,
+          pinned: false,
+          ...(operation ? { archiveOperationKey: operation.operationKey } : {}),
+        },
+      });
+    }),
+  );
+  if (replayArchive) {
+    await completeBotArchive(deps, replayArchive, context);
+    return;
+  }
+  await Promise.allSettled([
+    ...runIds.map((id) => deps.jobs.cancel(runJobKey(id))),
+    ...activeRoutines.map((routine) => deps.jobs.cancel(routineJobKey(routine.id))),
+  ]);
+  if (cleanupRunIds.length) await reconcileTaskCleanup(deps, cleanupRunIds);
+  await completeBotArchive(deps, { ...bot, archivedAt: now }, context);
+}
+
+async function completeBotArchive(
+  deps: BotLifecycleDeps,
+  bot: LifecycleBot,
+  context: AdapterContext,
+) {
+  const archiveClaim = new Date(Date.now() + 60_000);
+  const claimed = await deps.prisma.bot.updateMany({
+    where: {
+      id: bot.id,
+      archivedAt: bot.archivedAt,
+      archiveCleanupPending: true,
+      OR: [{ archiveCleanupClaimUntil: null }, { archiveCleanupClaimUntil: { lt: new Date() } }],
+    },
+    data: { archiveCleanupClaimUntil: archiveClaim },
+  });
+  if (!claimed.count) return;
+  const dedicated = await deps.prisma.computer.findUnique({
+    where: { scopeKey: computerScopeKey("dedicated", bot.spaceId, bot.id) },
+  });
+  try {
+    context = { ...context, signal: AbortSignal.timeout(45_000) };
+    await releaseTeamComputerScreen(deps, bot, dedicated?.id, context);
+    const currentDedicated = dedicated
+      ? await deps.prisma.computer.findUnique({ where: { id: dedicated.id } })
+      : null;
+    if (currentDedicated?.providerRef && currentDedicated.state === "running") {
+      const ref = toComputerRef(currentDedicated);
+      await checkpointAndRecordComputerWorkspace(deps, currentDedicated, ref, context);
+      await deps.sandbox.stop(ref, context);
+      await deps.prisma.computer.updateMany({
+        where: {
+          id: currentDedicated.id,
+          state: "running",
+          providerRef: currentDedicated.providerRef,
+        },
         data: { state: "stopped" },
       });
     }
-    await tx.bot.update({
-      where: { id: bot.id },
-      data: { archivedAt: bot.archivedAt ?? now, pinned: false },
+    await deps.prisma.bot.updateMany({
+      where: { id: bot.id, archiveCleanupClaimUntil: archiveClaim },
+      data: { archiveCleanupPending: false, archiveCleanupClaimUntil: null },
     });
-  });
-  await Promise.allSettled([
-    ...activeRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
-    ...activeRoutines.map((routine) => deps.jobs.cancel(routineJobKey(routine.id))),
-  ]);
-  await releaseTeamComputerScreen(deps, bot, dedicated?.id, context);
-  const currentDedicated = dedicated
-    ? await deps.prisma.computer.findUnique({ where: { id: dedicated.id } })
-    : null;
-  if (currentDedicated?.providerRef && currentDedicated.state === "running") {
-    const ref = toComputerRef(currentDedicated);
-    await checkpointAndRecordComputerWorkspace(deps, currentDedicated, ref, context);
-    await deps.sandbox.stop(ref, context);
-    await deps.prisma.computer.updateMany({
-      where: {
-        id: currentDedicated.id,
-        state: "running",
-        providerRef: currentDedicated.providerRef,
-      },
-      data: { state: "stopped" },
+  } catch (error) {
+    await deps.prisma.bot.updateMany({
+      where: { id: bot.id, archiveCleanupClaimUntil: archiveClaim },
+      data: { archiveCleanupClaimUntil: null },
     });
+    throw error;
   }
+}
+
+async function cancelBotTasks(tx: Prisma.TransactionClient, botId: string): Promise<string[]> {
+  const cleanupRunIds: string[] = [];
+  const thread = await tx.thread.findUnique({ where: { botId: botId }, select: { id: true } });
+  if (thread) await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
+  const tasks = await tx.task.findMany({
+    where: {
+      botId: botId,
+      protocol: TASK_PROTOCOL,
+      status: { notIn: ["completed", "failed", "cancelled"] },
+    },
+  });
+  for (const task of tasks.sort((a, b) =>
+    (a.rootTaskId ?? a.id).localeCompare(b.rootTaskId ?? b.id),
+  )) {
+    const cancelled = await cancelCoordinatedTask(tx, task.id, "The bot was deleted.");
+    if (cancelled) cleanupRunIds.push(...cancelled.cancelledRunIds);
+  }
+  return cleanupRunIds;
 }
 
 export async function destroyBot(
@@ -373,24 +551,31 @@ export async function destroyBot(
     deps.prisma.routine.findMany({ where: { botId: bot.id }, select: { id: true } }),
   ]);
   const runIds = activeRuns.map((run) => run.id);
+  // Commit terminal outcomes and cleanup snapshots before any filesystem/provider
+  // work. A failed deletion must not leave a parent waiting on a cancelled run.
+  const cleanupRunIds = await withTransactionRetry(() =>
+    deps.prisma.$transaction((tx) => cancelBotTasks(tx, bot.id)),
+  );
   await deps.prisma.run.updateMany({
-    where: { id: { in: runIds } },
+    where: { id: { in: runIds }, task: { protocol: { not: TASK_PROTOCOL } } },
     data: { status: "cancelled", completedAt: new Date() },
   });
   await Promise.allSettled([
     ...activeRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
     ...routines.map((routine) => deps.jobs.cancel(routineJobKey(routine.id))),
   ]);
+  if (cleanupRunIds.length) await reconcileTaskCleanup(deps, cleanupRunIds);
   const sharedComputer = await releaseTeamComputerScreen(deps, bot, dedicated?.id, context, {
     cancelRunWork: true,
   });
   if (dedicated?.providerRef) {
-    await deps.sandbox.destroy(toComputerRef(dedicated), context).catch(() => undefined);
+    await deps.sandbox.destroy(toComputerRef(dedicated), context);
   }
   // Keep the bot deletion transaction from committing if raw transcript cleanup fails.
   await removePiBotSessions(deps.dataDir, bot.userId, bot.id);
   const deletion = await withTransactionRetry(() =>
     deps.prisma.$transaction(async (tx) => {
+      cleanupRunIds.push(...(await cancelBotTasks(tx, bot.id)));
       const locked = await tx.$queryRaw<Array<{ id: string; webhookSecretId: string | null }>>`
         SELECT id, "webhookSecretId"
         FROM bots
@@ -398,6 +583,11 @@ export async function destroyBot(
         FOR UPDATE
       `;
       const webhookSecretId = locked[0]?.webhookSecretId ?? bot.webhookSecretId ?? null;
+      // Delivered artifacts belong to the surviving task, including their storage bytes.
+      await tx.artifact.updateMany({
+        where: { botId: bot.id, taskReferences: { some: { task: { botId: { not: bot.id } } } } },
+        data: { botId: null },
+      });
       const botArtifacts = await tx.artifact.findMany({
         where: { botId: bot.id, groupId: null, spaceId: bot.spaceId },
         select: { storageKey: true },
@@ -450,6 +640,7 @@ export async function destroyBot(
       };
     }),
   );
+  if (cleanupRunIds.length) await reconcileTaskCleanup(deps, cleanupRunIds);
   await Promise.allSettled(
     deletion.cancelledGroupRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
   );
@@ -762,4 +953,27 @@ async function removeContainedDirectory(root: string, parent: string, name: stri
 
 function isMissing(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+/** Retry interrupted archive cleanup before allowing the bot to be restored. */
+export async function reconcileBotArchives(deps: BotLifecycleDeps) {
+  const bots = await deps.prisma.bot.findMany({
+    where: {
+      archiveCleanupPending: true,
+      archivedAt: { not: null },
+      OR: [{ archiveCleanupClaimUntil: null }, { archiveCleanupClaimUntil: { lt: new Date() } }],
+    },
+    orderBy: { updatedAt: "asc" },
+    take: 5,
+  });
+  for (const bot of bots) {
+    await completeBotArchive(deps, bot, {
+      operationId: `archive-recovery:${bot.id}`,
+      traceId: bot.id,
+      spaceId: bot.spaceId,
+      userId: bot.userId,
+      botId: bot.id,
+      signal: AbortSignal.timeout(45_000),
+    }).catch((error) => getLogger().error("bot archive recovery", error));
+  }
 }

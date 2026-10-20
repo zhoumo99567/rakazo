@@ -112,6 +112,7 @@ function bot(description = "Billing", overrides: Partial<Bot> = {}): Bot {
     teamChatAmbientEnabled: false,
     teamChatRules: "",
     fleetManagement: false,
+    managementRole: "member",
     disabledBuiltinTools: [],
     webhookConfigured: false,
     spawnKey: null,
@@ -486,5 +487,27 @@ describe("instruction settings refresh", () => {
       );
     });
     expect(descriptionField().value).toBe("Approved replacement");
+  });
+});
+
+describe("BotSettings role", () => {
+  it("saves the role independently and restores it when permission changes fail", async () => {
+    await render();
+    const select = container.querySelector<HTMLSelectElement>('select[id$="-management-role"]')!;
+    onSave.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => {
+      select.value = "chief";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ managementRole: "chief" });
+    expect(select.value).toBe("member");
+    onSave.mockClear();
+    await act(async () => {
+      select.value = "chief";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ managementRole: "chief" });
+    await clickSave();
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("managementRole");
   });
 });

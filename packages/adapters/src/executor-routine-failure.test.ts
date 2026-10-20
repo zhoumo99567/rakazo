@@ -103,7 +103,10 @@ async function failRun(scenario: Scenario) {
       findUnique: vi.fn(async () => null),
       count: vi.fn(async () => scenario.botMessages ?? 0),
     },
-    task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Sweep the inbox" })) },
+    task: {
+      findUnique: vi.fn(async () => ({ protocol: "legacy" })),
+      findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Sweep the inbox" })),
+    },
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
     connection: { findMany: vi.fn(async () => []) },
     spaceModelPreference: { findFirst: vi.fn(async () => null) },

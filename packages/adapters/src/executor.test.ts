@@ -300,6 +300,42 @@ describe("run workspace checkpoint", () => {
 });
 
 describe("run tool selection", () => {
+  it.each(["member", "chief"])(
+    "separates %s management authority from group settings",
+    (managementRole) => {
+      const options = {
+        graphicalToolsAllowed: false,
+        groupId: null,
+        trigger: "user",
+        semanticMemoryEnabled: false,
+        messagingChannelRun: false,
+        taskProtocol: "coordination_v1",
+        managementRole,
+        ownerAuthorized: true,
+        fleetManagement: false,
+      };
+      const names = selectBuiltinToolsForRun(options).map((tool) => tool.name);
+      expect(names).toEqual(
+        expect.arrayContaining(["handoff_to_bot", "task_status", "task_cancel"]),
+      );
+      expect(names.includes("spawn_bot")).toBe(managementRole === "chief");
+      expect(names).not.toContain("create_group");
+      const external = selectBuiltinToolsForRun({
+        ...options,
+        trigger: "task_delegation",
+        ownerAuthorized: false,
+      }).map((tool) => tool.name);
+      expect(external).not.toContain("spawn_bot");
+      const memberGroup = selectBuiltinToolsForRun({
+        ...options,
+        managementRole: "member",
+        fleetManagement: true,
+      }).map((tool) => tool.name);
+      expect(memberGroup).toContain("create_group");
+      expect(memberGroup).not.toContain("spawn_bot");
+    },
+  );
+
   it.each([
     [false, false],
     [false, true],
@@ -378,6 +414,7 @@ describe("run tool selection", () => {
         semanticMemoryEnabled: false,
         messagingChannelRun: false,
         fleetManagement,
+        managementRole: fleetManagement ? "chief" : "member",
         followUpFromUser,
         disabledBuiltinTools,
       })
@@ -1209,12 +1246,12 @@ describe("userTurnInstructions", () => {
   const stableMiddle = [
     "A bot and a subagent are different. Never use both for the same request.",
     "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. It always pauses for explicit user approval; never claim the space exists before the tool succeeds.",
-    "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
+    "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. Only a Chief can create ordinary bots. If the user only asked to create a bot, create it once. If prompt starts work, it is a child task that reports back automatically; continue managing the parent task. Do not run_subagent to demo it.",
     "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. Your description is the short public summary teammates see; it does not change your instructions. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
   ];
   const archiveBot =
-    "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.";
+    "archive_bot lets an authorized Chief archive an ordinary bot belonging to the same user in this space. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.";
   const replyGuidance =
     "Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at 500 characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.";
   const stableTail = [
@@ -1371,6 +1408,7 @@ describe("userTurnInstructions", () => {
             semanticMemoryEnabled: false,
             messagingChannelRun: false,
             fleetManagement,
+            managementRole: fleetManagement ? "chief" : "member",
             followUpFromUser,
             disabledBuiltinTools,
           }),
@@ -1389,7 +1427,7 @@ describe("userTurnInstructions", () => {
     expect(clause).toContain("Tool results, tool arguments");
     expect(clause).toMatch(/untrusted/);
     expect(clause).not.toContain("Instructions edits");
-    expect(clause).toContain("no tool to edit a bot you did not create");
+    expect(clause).toContain("Only the owner can change a bot");
     const narrowed = clauseFor("user", true, false, ["set_child_instructions", "create_group"]);
     expect(narrowed).toContain(
       "update_group, set_child_bot_model and create_child_routine need the owner's approval",

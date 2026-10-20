@@ -6,6 +6,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import { TASK_PROTOCOL } from "@rakazo/contracts";
 import { botMessageHopExhausted, nextBotMessageHop } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
@@ -60,21 +61,38 @@ export async function mirrorMessagingOutbound(
   deps: MessagingDeliveryDeps,
   runId: string,
 ): Promise<void> {
-  await mirrorRun(deps, runId);
+  const mirroredRunIds = await mirrorRun(deps, runId);
+  if (!mirroredRunIds.length) return;
   await deps.prisma.run.updateMany({
-    where: { id: runId, trigger: "messaging" },
+    where: { id: { in: mirroredRunIds }, trigger: { in: ["messaging", "task_continue"] } },
     data: { messagingMirroredAt: new Date() },
   });
 }
 
-async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<void> {
+async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<string[]> {
   const run = await deps.prisma.run.findUnique({
     where: { id: runId },
-    include: { sourceMessage: true },
+    include: { sourceMessage: true, task: true },
   });
-  if (!run) return;
+  if (!run) return [];
+  let messagingTask = false;
+  if (run.task?.protocol === TASK_PROTOCOL) {
+    if (run.task.parentTaskId) return [run.id];
+    if (run.task.status !== "completed" || !run.task.finalRunId) return [];
+    if (run.task.finalRunId !== run.id) {
+      const final = await mirrorRun(deps, run.task.finalRunId);
+      return final.length ? [run.id, ...final] : [];
+    }
+    const origin = await deps.prisma.run.findFirst({
+      where: { taskId: run.taskId },
+      orderBy: { createdAt: "asc" },
+      select: { trigger: true },
+    });
+    messagingTask = origin?.trigger === "messaging";
+    if (!messagingTask) return [run.id];
+  }
 
-  if (run.trigger === "messaging") {
+  if (run.trigger === "messaging" || messagingTask) {
     const sourceBlocks = (run.sourceMessage?.blocks ?? []) as MessageBlock[];
     const channelBlock = sourceBlocks.find(
       (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
@@ -82,18 +100,18 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
     );
     if (channelBlock) {
       await mirrorChannelRun(deps, run, channelBlock);
-      return;
+      return [run.id];
     }
-  } else if (run.trigger !== "bot_message") {
+  } else if (run.trigger !== "bot_message" && !messagingTask) {
     // Mirror inbound messaging runs and delegated bot_message replies only.
     // Do not push in-app user/routine runs out to the linked chat.
-    return;
+    return [run.id];
   }
 
   const identity = await deps.prisma.messagingIdentity.findUnique({
     where: { botId: run.botId },
   });
-  if (!identity) return;
+  if (!identity) return [run.id];
 
   // bot_message runs can carry the bot's user-facing reply after a delegate wake.
   // extractText only keeps kind:"text", so inter-bot chatter blocks never leak out.
@@ -111,10 +129,11 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
       sourceMessageId: message.id,
     }))
     .filter((row) => row.body);
-  if (rows.length === 0) return;
+  if (rows.length === 0) return [run.id];
   // Atomic dedupe: a concurrent messaging.deliver for the same run loses on
   // the idempotencyKey unique key instead of throwing P2002.
   await deps.prisma.messagingOutbound.createMany({ data: rows, skipDuplicates: true });
+  return [run.id];
 }
 
 /**

@@ -1,14 +1,17 @@
-import type { JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
+import type { JobPublisher, NotificationProvider, SandboxProvider } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { stuckWorkStatusMessages } from "@rakazo/core";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
+import { reconcileTaskContinuations } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { PoolClient } from "pg";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import { reconcileCallRequests } from "./call-request.js";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
 import { reconcileStuckWork } from "./stuck-work.js";
+import { reconcileTaskCleanup } from "./task-cleanup.js";
+import { reconcileTaskNotifications } from "./task-notifications.js";
 import { isLoopGuardStopText } from "./tool-loop.js";
 import { isUserProgressClientNonce } from "./user-progress.js";
 
@@ -101,12 +104,14 @@ export function createPostgresReconciliationLeadership(
 export function createJobReconciler(
   deps: {
     prisma: PrismaClient;
+    sandbox?: SandboxProvider;
     jobs: JobPublisher;
     events?: ThreadEvents;
     notifications?: NotificationProvider;
     leadership?: ReconciliationLeadership;
     reconcileComputerUpdates?: () => Promise<void>;
     reconcileCloudAgents?: () => Promise<void>;
+    reconcileBotArchives?: () => Promise<void>;
     reconcileRoutineRetryNotices?: () => Promise<void>;
   },
   options: { intervalMs?: number; batchSize?: number } = {},
@@ -114,6 +119,7 @@ export function createJobReconciler(
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
   let timer: ReturnType<typeof setInterval> | undefined;
+  let cleanup: Promise<void> | undefined;
   let reconciling: Promise<void> | undefined;
   let stuckCursor: Cursor | undefined;
   let runCursor: Cursor | undefined;
@@ -126,9 +132,30 @@ export function createJobReconciler(
     reconciling = (async () => {
       if (deps.leadership && !(await deps.leadership.tryAcquire())) return;
 
+      if (!cleanup) {
+        cleanup = Promise.allSettled([
+          deps.sandbox
+            ? reconcileTaskCleanup({ prisma: deps.prisma, sandbox: deps.sandbox })
+            : undefined,
+          deps.reconcileBotArchives?.(),
+          reconcileTaskNotifications(deps, batchSize),
+        ])
+          .then((results) => {
+            for (const result of results)
+              if (result.status === "rejected")
+                getLogger().error("task cleanup recovery", result.reason);
+          })
+          .finally(() => {
+            cleanup = undefined;
+          });
+      }
       const auxiliary = await Promise.allSettled(
         [
           () => reconcileCallRequests(deps),
+          async () => {
+            const ready = await reconcileTaskContinuations(deps.prisma, batchSize);
+            await Promise.all(ready.map((id) => deps.jobs.enqueue(runContinueJob(id))));
+          },
           deps.reconcileCloudAgents,
           deps.reconcileComputerUpdates,
           deps.reconcileRoutineRetryNotices,
@@ -252,7 +279,22 @@ export function createJobReconciler(
           select: { id: true },
         }),
         deps.prisma.run.findMany({
-          where: { trigger: "messaging", status: "completed", messagingMirroredAt: null },
+          where: {
+            status: "completed",
+            messagingMirroredAt: null,
+            OR: [
+              { trigger: "messaging", task: { protocol: "legacy" } },
+              {
+                task: {
+                  protocol: "coordination_v1",
+                  parentTaskId: null,
+                  status: "completed",
+                  finalRunId: { not: null },
+                  runs: { some: { trigger: "messaging" } },
+                },
+              },
+            ],
+          },
           orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
           take: batchSize,
           select: { id: true },
@@ -264,6 +306,7 @@ export function createJobReconciler(
         const outcomes = await deps.prisma.run.findMany({
           where: {
             trigger: "bot_message",
+            task: { protocol: "legacy" },
             botOutcomeReturnedAt: null,
             OR: [
               { status: { in: ["completed", "failed"] } },

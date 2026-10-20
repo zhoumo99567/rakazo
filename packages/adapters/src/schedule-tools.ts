@@ -8,7 +8,8 @@ import {
   nextCronDate,
   ONCE_ROUTINE_CRON,
 } from "@rakazo/core";
-import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { BotManager, Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import { lockBotManagement } from "@rakazo/db";
 
 import { validateRoutineWatch } from "./routine-watch.js";
 
@@ -27,10 +28,11 @@ export function filterBuiltinToolsForRun<T extends { name: string }>(
 export function filterBuiltinToolsForThread<T extends { name: string }>(
   tools: T[],
   groupId: string | null | undefined,
+  coordinated = false,
 ): T[] {
   return tools.filter(
     (tool) =>
-      (groupId || tool.name !== "handoff_to_bot") &&
+      (groupId || coordinated || tool.name !== "handoff_to_bot") &&
       // In a group the room is the shared surface: hand the stage to a member
       // rather than starting a private thread off to one side.
       (!groupId || tool.name !== "message_bot"),
@@ -212,6 +214,7 @@ export async function createScheduleFromTool(
     userId: string;
     threadId: string;
     target?: { botId: string; threadId: string };
+    manager?: BotManager;
     name: string;
     prompt: string;
     timezone?: string;
@@ -227,26 +230,38 @@ export async function createScheduleFromTool(
 
   const timezone = String(input.timezone ?? "UTC");
   if (input.schedule.watch !== undefined) {
+    if (input.target) return { error: "Watch routines are not supported for another bot." };
     return createWatchFromTool(deps, { ...input, name, prompt, timezone });
   }
   const resolved = resolveScheduleTiming(input.schedule, timezone);
   if (!resolved.ok) return { error: resolved.error };
 
-  const row = await deps.prisma.routine.create({
-    data: {
-      spaceId: input.spaceId,
-      botId: routineBotId,
-      userId: input.userId,
-      threadId: routineThreadId,
-      name,
-      prompt,
-      crons: [resolved.cron],
-      timezone,
-      notify: true,
-      active: true,
-      nextRunAt: resolved.nextRunAt,
-    },
-  });
+  const create = (client: Pick<PrismaClient, "routine">) =>
+    client.routine.create({
+      data: {
+        spaceId: input.spaceId,
+        botId: routineBotId,
+        userId: input.userId,
+        threadId: routineThreadId,
+        name,
+        prompt,
+        crons: [resolved.cron],
+        timezone,
+        notify: true,
+        active: true,
+        nextRunAt: resolved.nextRunAt,
+      },
+    });
+  const row = input.target
+    ? await deps.prisma.$transaction(async (tx) => {
+        if (!input.manager) throw new Error("Managing another bot's routines requires a Chief.");
+        await lockBotManagement(tx, input.spaceId, input.manager, {
+          threadIds: [routineThreadId],
+          targetBotId: routineBotId,
+        });
+        return create(tx);
+      })
+    : await create(deps.prisma);
 
   try {
     await deps.jobs.enqueue(routineWakeupJob(row.id, resolved.nextRunAt));

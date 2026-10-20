@@ -392,62 +392,66 @@ model SpaceVoicePreference {
 }
 
 model Bot {
-  screenGeneration Int @default(0)
-  id                String            @id @default(cuid())
-  spaceId           String
-  space             Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId            String
-  name              String
-  title             String            @default("")
-  description       String            @default("")
-  instructions      String            @default("")
-  selfUpdateInstructions Boolean @default(false)
-  instructionHistory Json @default("[]")
+  screenGeneration         Int               @default(0)
+  id                       String            @id @default(cuid())
+  spaceId                  String
+  space                    Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId                   String
+  name                     String
+  title                    String            @default("")
+  description              String            @default("")
+  instructions             String            @default("")
+  selfUpdateInstructions   Boolean           @default(false)
+  instructionHistory       Json              @default("[]")
   pendingInstructionsRunId String?
-  color             String
-  notifyOnFinish    Boolean           @default(true)
-  pinned            Boolean           @default(false)
-  position          Int               @default(0)
-  sectionId         String?
-  section           BotSection?       @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-  archivedAt        DateTime?
-  parentBotId       String?
-  spawnKey          String?
-  memoryScope       String?
-  parent            Bot?              @relation("BotChildren", fields: [parentBotId], references: [id], onDelete: SetNull)
-  children          Bot[]             @relation("BotChildren")
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  thread            Thread?
-  computerId        String?
-  computer          Computer?         @relation(fields: [computerId], references: [id], onDelete: SetNull)
-  computerSwitching Boolean           @default(false)
-  voiceId           String?
-  autoSpeak         Boolean           @default(false)
-  modelProvider     String?
-  modelId           String?
-  thinkingLevel     String?
-  disabledBuiltinTools String[] @default([])
-  webhookSecretId   String?
-  teamChatAmbientEnabled Boolean @default(false)
-  teamChatRules          String  @default("")
-  fleetManagement        Boolean @default(false)
-  routines          Routine[]
-  scratchpadItems   ScratchpadItem[]
-  taughtSkills      TaughtSkill[]
-  memoryDocuments   MemoryDocument[]
-  agentHome         AgentHome?
-  browserProfile    BrowserProfile?
-  artifacts         Artifact[]
-  tasks             Task[]
-  runs              Run[]
-  steeringMessages  SteeringMessage[]
-  mcpServers        BotMcpServer[]
-  groupMembers      ChatGroupMember[]
-  botSecrets BotSecret[]
-  assignedTickets   Ticket[]          @relation("TicketAssigneeBot")
-  createdTickets    Ticket[]          @relation("TicketCreatorBot")
-  ticketComments    TicketComment[]   @relation("TicketCommentAuthorBot")
+  color                    String
+  notifyOnFinish           Boolean           @default(true)
+  pinned                   Boolean           @default(false)
+  position                 Int               @default(0)
+  sectionId                String?
+  section                  BotSection?       @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  archivedAt               DateTime?
+  parentBotId              String?
+  spawnKey                 String?
+  memoryScope              String?
+  parent                   Bot?              @relation("BotChildren", fields: [parentBotId], references: [id], onDelete: SetNull)
+  children                 Bot[]             @relation("BotChildren")
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+  thread                   Thread?
+  computerId               String?
+  computer                 Computer?         @relation(fields: [computerId], references: [id], onDelete: SetNull)
+  computerSwitching        Boolean           @default(false)
+  voiceId                  String?
+  autoSpeak                Boolean           @default(false)
+  modelProvider            String?
+  modelId                  String?
+  thinkingLevel            String?
+  disabledBuiltinTools     String[]          @default([])
+  webhookSecretId          String?
+  teamChatAmbientEnabled   Boolean           @default(false)
+  teamChatRules            String            @default("")
+  fleetManagement          Boolean           @default(false)
+  archiveCleanupPending    Boolean           @default(false)
+  archiveCleanupClaimUntil DateTime?
+  archiveOperationKey      String?
+  managementRole           String            @default("member")
+  routines                 Routine[]
+  scratchpadItems          ScratchpadItem[]
+  taughtSkills             TaughtSkill[]
+  memoryDocuments          MemoryDocument[]
+  agentHome                AgentHome?
+  browserProfile           BrowserProfile?
+  artifacts                Artifact[]
+  tasks                    Task[]
+  runs                     Run[]
+  steeringMessages         SteeringMessage[]
+  mcpServers               BotMcpServer[]
+  groupMembers             ChatGroupMember[]
+  botSecrets               BotSecret[]
+  assignedTickets          Ticket[]          @relation("TicketAssigneeBot")
+  createdTickets           Ticket[]          @relation("TicketCreatorBot")
+  ticketComments           TicketComment[]   @relation("TicketCommentAuthorBot")
 
   externalConversations ExternalConversation[]
 
@@ -599,22 +603,78 @@ model Event {
 }
 
 model Task {
-  id        String   @id @default(cuid())
-  spaceId   String
-  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  botId     String
-  bot       Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
-  threadId  String
-  thread    Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  userId    String
-  prompt    String
-  status    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  runs      Run[]
+  id                      String         @id @default(cuid())
+  spaceId                 String
+  space                   Space          @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId                   String
+  bot                     Bot            @relation(fields: [botId], references: [id], onDelete: Cascade)
+  threadId                String
+  thread                  Thread         @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId                  String
+  prompt                  String
+  status                  String
+  protocol                String         @default("legacy")
+  parentTaskId            String?
+  parent                  Task?          @relation("TaskChildren", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  children                Task[]         @relation("TaskChildren")
+  rootTaskId              String?
+  delegatedByRunId        String?
+  delegationKey           String?        @unique
+  originalPrompt          String?
+  sourceMessageId         String?
+  ownerAuthorized         Boolean        @default(false)
+  externalInfluence       Boolean        @default(false)
+  result                  Json?
+  finalRunId              String?
+  completedAt             DateTime?
+  notificationDeliveredAt DateTime?
+  notificationLeaseUntil  DateTime?
+  inbox                   TaskMessage[]
+  retainedArtifacts       TaskArtifact[]
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  runs                    Run[]
 
   @@index([spaceId, botId])
+  @@index([parentTaskId, status])
+  @@index([protocol, status, updatedAt])
+  @@index([rootTaskId])
   @@map("tasks")
+}
+
+/// The recipient owns this durable inbox. Sender ids and names survive deletion.
+model TaskMessage {
+  id             String    @id @default(cuid())
+  taskId         String
+  task           Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromTaskId     String
+  fromBotId      String
+  fromBotName    String
+  kind           String
+  text           String
+  payload        Json?
+  replyToId      String?
+  answeredAt     DateTime?
+  deliveryKey    String    @unique
+  claimedByRunId String?
+  consumedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([taskId, consumedAt, createdAt])
+  @@index([fromTaskId, kind, answeredAt])
+  @@index([claimedByRunId])
+  @@map("task_messages")
+}
+
+model TaskArtifact {
+  taskId     String
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  artifactId String
+  artifact   Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, artifactId])
+  @@index([artifactId])
+  @@map("task_artifacts")
 }
 
 model Run {
@@ -987,7 +1047,7 @@ model ComputerUpdate {
 }
 
 model Computer {
-  screenGeneration Int @default(0)
+  screenGeneration        Int                      @default(0)
   id                      String                   @id @default(cuid())
   spaceId                 String
   space                   Space                    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
@@ -1016,6 +1076,7 @@ model Computer {
   updatedAt               DateTime                 @updatedAt
   bots                    Bot[]
   executionLeases         ComputerExecutionLease[]
+  taskCleanups            TaskRunCleanup[]
   maintenanceId           String?
   updates                 ComputerUpdate[]
 
@@ -1041,30 +1102,31 @@ model ComputerExecutionLease {
 }
 
 model Artifact {
-  id         String     @id @default(cuid())
-  spaceId    String
-  space      Space      @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  botId      String?
-  bot        Bot?       @relation(fields: [botId], references: [id], onDelete: SetNull)
-  groupId    String?
-  group      ChatGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  userId     String
-  runId      String?
-  name       String
+  id          String     @id @default(cuid())
+  spaceId     String
+  space       Space      @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId       String?
+  bot         Bot?       @relation(fields: [botId], references: [id], onDelete: SetNull)
+  groupId     String?
+  group       ChatGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId      String
+  runId       String?
+  name        String
   description String?
-  mimeType   String
-  size       Int
-  hash       String
-  storageKey String
-  createdAt  DateTime   @default(now())
+  mimeType    String
+  size        Int
+  hash        String
+  storageKey  String
+  createdAt   DateTime   @default(now())
 
   // Null on the first version; that row's id is the family's stable id.
   rootArtifactId String?
-  rootArtifact   Artifact?  @relation("ArtifactVersions", fields: [rootArtifactId], references: [id], onDelete: Cascade)
-  versions       Artifact[] @relation("ArtifactVersions")
-  version        Int        @default(1)
+  rootArtifact   Artifact?      @relation("ArtifactVersions", fields: [rootArtifactId], references: [id], onDelete: Cascade)
+  versions       Artifact[]     @relation("ArtifactVersions")
+  version        Int            @default(1)
   // Client-chosen per upload so a retried upload that already landed returns this row.
   clientNonce    String?
+  taskReferences TaskArtifact[]
 
   @@unique([spaceId, userId, clientNonce])
   @@index([spaceId, botId])
@@ -1346,7 +1408,6 @@ model BotSecret {
   @@map("bot_secrets")
 }
 
-
 model ExternalConversation {
   id                       String            @id @default(cuid())
   provider                 String
@@ -1489,4 +1550,26 @@ model TicketComment {
 
   @@index([ticketId, createdAt])
   @@map("ticket_comments")
+}
+
+/// Durable cancellation coordinates survive deletion of the task or bot.
+model TaskRunCleanup {
+  runId        String
+  computerId   String
+  computer     Computer  @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  botId        String
+  userId       String
+  spaceId      String
+  homeKey      String
+  kind         String
+  providerRef  String?
+  fence        Int?
+  claimedUntil DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@id([runId, computerId])
+  @@index([completedAt, createdAt])
+  @@index([computerId, botId, completedAt])
+  @@map("task_run_cleanups")
 }

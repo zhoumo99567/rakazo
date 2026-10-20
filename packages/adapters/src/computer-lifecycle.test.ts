@@ -165,9 +165,7 @@ describe("computer provisioning", () => {
         findUniqueOrThrow: vi.fn(async () => ({ ...row })),
         updateMany,
       },
-      run: {
-        findFirst: vi.fn(async () => null),
-      },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => null) },
     } as unknown as PrismaClient;
     const deps = {
       prisma,
@@ -277,9 +275,7 @@ describe("computer provisioning", () => {
         findUniqueOrThrow: vi.fn(async () => ({ ...row })),
         updateMany,
       },
-      run: {
-        findFirst: vi.fn(async () => null),
-      },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => null) },
     } as unknown as PrismaClient;
     const sandbox = new FakeSandboxProvider();
     const setTimeoutReal = globalThis.setTimeout;
@@ -329,9 +325,7 @@ describe("computer provisioning", () => {
         })),
         updateMany,
       },
-      run: {
-        findFirst: vi.fn(async () => null),
-      },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => null) },
     } as unknown as PrismaClient;
     // First Date.now() is the first-observation stale check (still live). Later calls sit
     // past the TTL so a post-wait re-check would wrongly reclaim an in-flight suspend.
@@ -381,9 +375,7 @@ describe("computer provisioning", () => {
         })),
         updateMany,
       },
-      run: {
-        findFirst: vi.fn(async () => null),
-      },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => null) },
     } as unknown as PrismaClient;
     const now = vi.spyOn(Date, "now").mockReturnValue(nowMs);
     const setTimeoutReal = globalThis.setTimeout;
@@ -554,9 +546,7 @@ describe("computer provisioning", () => {
       executionLease: {
         findFirst: vi.fn(async () => null),
       },
-      run: {
-        findFirst: vi.fn(async () => null),
-      },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => null) },
     } as unknown as PrismaClient;
     const sandbox = new FakeSandboxProvider();
     // First Date.now() is the stale-claim check (must see the stamp older than an
@@ -623,9 +613,7 @@ describe("computer provisioning", () => {
       executionLease: {
         findFirst: vi.fn(async () => null),
       },
-      run: {
-        findFirst: vi.fn(async () => null),
-      },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => null) },
     } as unknown as PrismaClient;
     const sandbox = new FakeSandboxProvider();
     const now = vi.spyOn(Date, "now").mockReturnValue(nowMs);
@@ -678,6 +666,7 @@ describe("computer provisioning", () => {
         findFirst: vi.fn(async () => null),
       },
       run: {
+        findUnique: vi.fn(async () => null),
         findFirst: vi.fn(async () => ({ id: "other-run" })),
       },
     } as unknown as PrismaClient;
@@ -1752,11 +1741,12 @@ describe("computer execution leases", () => {
           .mockResolvedValue({ nextEventSeq: 1 }),
       },
       run: {
+        findUnique: vi.fn(async () => null),
         findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
         updateMany: vi.fn(),
       },
       attempt: { updateMany: vi.fn() },
-      task: { updateMany: vi.fn() },
+      task: { findMany: vi.fn(async () => []), updateMany: vi.fn() },
       computerExecutionLease: {
         updateMany: vi.fn().mockImplementation(async ({ data }) => {
           lease.expiresAt = data.expiresAt;
@@ -1915,13 +1905,18 @@ describe("computer execution leases", () => {
       .mockResolvedValueOnce([{ fence: 4 }])
       .mockResolvedValueOnce([{ fence: 5 }]);
     const tx = {
+      task: { findMany: vi.fn(async () => []) },
       $queryRaw: queryRaw,
       computerExecutionLease: {
         findUnique: vi.fn().mockResolvedValue(null),
         updateManyAndReturn,
         create: vi.fn(),
       },
-      run: { aggregate: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
+      run: {
+        findUnique: vi.fn(async () => null),
+        aggregate: vi.fn(),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
     };
     const prisma = {
       $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
@@ -1951,6 +1946,7 @@ describe("computer execution leases", () => {
     async (live) => {
       const now = new Date();
       const tx = {
+        task: { findMany: vi.fn(async () => []) },
         $queryRaw: vi
           .fn()
           .mockResolvedValueOnce([{ id: "bot-1" }])
@@ -1962,7 +1958,10 @@ describe("computer execution leases", () => {
             .fn()
             .mockRejectedValue(Object.assign(new Error("lease exists"), { code: "P2002" })),
         },
-        run: { aggregate: vi.fn().mockResolvedValue({ _max: { leaseFence: 2 } }) },
+        run: {
+          findUnique: vi.fn(async () => null),
+          aggregate: vi.fn().mockResolvedValue({ _max: { leaseFence: 2 } }),
+        },
       };
       const prisma = {
         $transaction: async (work: (client: typeof tx) => unknown) => work(tx),
@@ -2145,7 +2144,7 @@ describe("computer replacement", () => {
     const prisma = {
       computer: { findUniqueOrThrow, updateMany, update },
       computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
 
     const destroy = vi.spyOn(sandbox, "destroy");
@@ -2193,6 +2192,7 @@ describe("computer replacement", () => {
         updateMany: vi.fn().mockResolvedValueOnce({ count: 1 }),
       },
       run: {
+        findUnique: vi.fn(async () => null),
         findFirst: vi.fn().mockResolvedValue({ id: "other-run" }),
       },
     } as unknown as PrismaClient;
@@ -2229,7 +2229,7 @@ describe("computer replacement", () => {
         updateMany,
       },
       computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
 
     for (const mode of ["recover", "update"] as const) {
@@ -2271,7 +2271,7 @@ describe("computer replacement", () => {
         updateMany,
       },
       computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
 
     await expect(
@@ -2313,7 +2313,7 @@ describe("computer replacement", () => {
         updateMany,
       },
       computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const now = vi.spyOn(Date, "now").mockReturnValue(nowMs);
 
@@ -2355,7 +2355,10 @@ describe("computer replacement", () => {
         updateMany,
       },
       computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
-      run: { findFirst: vi.fn().mockResolvedValue({ id: "live-run" }) },
+      run: {
+        findUnique: vi.fn(async () => null),
+        findFirst: vi.fn().mockResolvedValue({ id: "live-run" }),
+      },
     } as unknown as PrismaClient;
 
     await expect(
@@ -2394,7 +2397,7 @@ describe("computer replacement", () => {
         updateMany,
       },
       computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
 
     await expect(
@@ -2435,7 +2438,7 @@ describe("computer replacement", () => {
       computerExecutionLease: {
         findFirst: vi.fn().mockResolvedValue({ id: "lease-other-bot" }),
       },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
 
     await expect(
@@ -2475,7 +2478,7 @@ describe("computer replacement", () => {
         updateMany,
       },
       computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const now = vi.spyOn(Date, "now").mockReturnValue(nowMs);
 
@@ -2519,7 +2522,10 @@ describe("computer replacement", () => {
         updateMany,
       },
       computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
-      run: { findFirst: vi.fn().mockResolvedValue({ id: "live-run" }) },
+      run: {
+        findUnique: vi.fn(async () => null),
+        findFirst: vi.fn().mockResolvedValue({ id: "live-run" }),
+      },
     } as unknown as PrismaClient;
 
     await expect(
@@ -2555,6 +2561,7 @@ describe("computer replacement", () => {
         updateMany: vi.fn().mockResolvedValueOnce({ count: 1 }),
       },
       run: {
+        findUnique: vi.fn(async () => null),
         findFirst: vi.fn().mockResolvedValue({ id: "same-bot-run" }),
       },
     } as unknown as PrismaClient;
@@ -2678,7 +2685,7 @@ describe("computer replacement", () => {
         findUniqueOrThrow,
         updateMany,
       },
-      run: { findFirst: vi.fn() },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn() },
     } as unknown as PrismaClient;
 
     await expect(
@@ -2716,7 +2723,7 @@ describe("computer replacement", () => {
         findUniqueOrThrow: vi.fn().mockResolvedValue(idleTakeoverComputer()),
         updateMany,
       },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
 
     await expect(
@@ -2769,7 +2776,7 @@ describe("computer replacement", () => {
         findUniqueOrThrow: vi.fn().mockResolvedValue(idleTakeoverComputer()),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
-      run: { findFirst: vi.fn() },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn() },
     } as unknown as PrismaClient;
 
     await expect(
@@ -2798,7 +2805,7 @@ describe("computer replacement", () => {
           .mockResolvedValue(idleTakeoverComputer({ controlRunId: "run-waiting" })),
         updateMany,
       },
-      run: { findFirst: vi.fn() },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn() },
     } as unknown as PrismaClient;
 
     await expect(
@@ -2831,7 +2838,7 @@ describe("computer replacement", () => {
         ),
         updateMany,
       },
-      run: { findFirst: vi.fn() },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn() },
     } as unknown as PrismaClient;
 
     await expect(
@@ -2869,7 +2876,7 @@ describe("computer replacement", () => {
     const findUnique = vi.fn().mockResolvedValue(computer);
     const prisma = {
       computer: { findUniqueOrThrow, findUnique, updateMany: vi.fn() },
-      run: { findFirst: vi.fn() },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn() },
     } as unknown as PrismaClient;
     const sandbox = Object.assign(new FakeSandboxProvider(), {
       setScreenControl: async () => {
@@ -2912,7 +2919,7 @@ describe("computer replacement", () => {
         }),
         updateMany: vi.fn().mockResolvedValueOnce({ count: 0 }),
       },
-      run: { findFirst: vi.fn() },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn() },
     } as unknown as PrismaClient;
     await expect(
       replaceComputer(
@@ -2963,6 +2970,7 @@ describe("computer replacement", () => {
         updateMany,
       },
       run: {
+        findUnique: vi.fn(async () => null),
         findFirst: vi.fn().mockResolvedValue({ id: "active-run" }),
       },
     } as unknown as PrismaClient;
@@ -3016,6 +3024,7 @@ describe("computer replacement", () => {
         updateMany,
       },
       run: {
+        findUnique: vi.fn(async () => null),
         findFirst: vi.fn().mockResolvedValue({ id: "active-run" }),
       },
     } as unknown as PrismaClient;
@@ -3081,7 +3090,7 @@ describe("computer replacement", () => {
       });
     const prisma = {
       computer: { findUniqueOrThrow, updateMany, update },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const sandbox = new FakeSandboxProvider();
 
@@ -3126,7 +3135,7 @@ describe("computer replacement", () => {
         }),
         updateMany: vi.fn().mockResolvedValueOnce({ count: 0 }),
       },
-      run: { findFirst: vi.fn() },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn() },
     } as unknown as PrismaClient;
     await expect(
       replaceComputer(
@@ -3178,7 +3187,7 @@ describe("computer replacement", () => {
     const update = vi.fn().mockResolvedValue({});
     const prisma = {
       computer: { findUniqueOrThrow, updateMany, update },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const destroy = vi.spyOn(sandbox, "destroy");
 
@@ -3232,7 +3241,7 @@ describe("computer replacement", () => {
         updateMany,
         update: vi.fn(),
       },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findUnique: vi.fn(async () => null), findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const destroy = vi.spyOn(sandbox, "destroy");
 

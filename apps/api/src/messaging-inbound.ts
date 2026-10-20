@@ -1,6 +1,7 @@
 import type { JobPublisher, MessagingInboundMessage } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import { TASK_PROTOCOL } from "@rakazo/contracts";
 import { parseMessagingCommand, sanitizeMessagingLabel } from "@rakazo/core";
 import type {
   MessagingIdentityRequest,
@@ -151,16 +152,36 @@ async function handleDirectEvent(
     deps.acknowledge?.(event.threadId, event.handle, async () => {
       const run = await deps.prisma.run.findUnique({
         where: { id: runId },
-        select: { status: true, messagingMirroredAt: true },
+        select: {
+          status: true,
+          messagingMirroredAt: true,
+          task: { select: { protocol: true, status: true, finalRunId: true } },
+        },
       });
       if (!run) return false;
-      // A failed or cancelled run may never be mirrored, and no reply is coming.
-      if (run.status === "failed" || run.status === "cancelled") return true;
-      if (!run.messagingMirroredAt) return false;
+      let replyRunId = runId;
+      let deliveryRun = run;
+      if (run.task?.protocol === TASK_PROTOCOL) {
+        if (["failed", "cancelled"].includes(run.task.status)) return true;
+        if (run.task.status !== "completed" || !run.task.finalRunId) return false;
+        replyRunId = run.task.finalRunId;
+        const final = await deps.prisma.run.findUnique({
+          where: { id: replyRunId },
+          select: {
+            status: true,
+            messagingMirroredAt: true,
+            task: { select: { protocol: true, status: true, finalRunId: true } },
+          },
+        });
+        if (!final) return false;
+        deliveryRun = final;
+      }
+      if (deliveryRun.status === "failed" || deliveryRun.status === "cancelled") return true;
+      if (!deliveryRun.messagingMirroredAt) return false;
       // Mirroring only queues the reply in the outbox. It has gone out once
       // none of this run's queued rows are still waiting to be sent.
       const replies = await deps.prisma.message.findMany({
-        where: { runId, role: "bot" },
+        where: { runId: replyRunId, role: "bot" },
         select: { id: true },
       });
       if (replies.length === 0) return true;

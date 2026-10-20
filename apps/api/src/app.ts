@@ -60,6 +60,7 @@ import {
   PostgresRealtimeFanout,
   pipedreamConfigFromEnv,
   piSessionsRoot,
+  reconcileBotArchives,
   reconcileCloudAgents,
   reconcileComputerUpdates,
   removePiUserSessions,
@@ -540,9 +541,11 @@ export async function createApp(
   const reconciler = inMemoryJobs
     ? createJobReconciler({
         prisma,
+        sandbox,
         jobs,
         events,
         notifications,
+        reconcileBotArchives: () => reconcileBotArchives({ prisma, sandbox, home, jobs }),
         reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
         reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
       })

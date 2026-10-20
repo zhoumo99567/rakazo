@@ -76,7 +76,8 @@ function createDeps(overrides: {
     overrides.identity === null ? null : { ...identity, ...(overrides.identity ?? {}) };
   const prisma = {
     run: {
-      findUnique: vi.fn(async () => overrides.run ?? messagingRun),
+      findUnique: vi.fn(async (_query: { where: { id: string } }) => overrides.run ?? messagingRun),
+      findFirst: vi.fn(async () => ({ trigger: "messaging" })),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     message: {
@@ -185,6 +186,50 @@ function createDeps(overrides: {
 }
 
 describe("deliverMessagingOutbound", () => {
+  it("keeps a waiting parent unmirrored until its final continuation completes", async () => {
+    const task = {
+      protocol: "coordination_v1",
+      parentTaskId: null,
+      status: "waiting_children",
+      finalRunId: null as string | null,
+    };
+    const first = { ...messagingRun, taskId: "task-1", task };
+    const deps = createDeps({ run: first });
+    await deliverMessagingOutbound(deps, { runId: first.id }, context);
+    expect(deps.prisma.run.updateMany).not.toHaveBeenCalled();
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+
+    task.status = "completed";
+    task.finalRunId = "run-final";
+    const final = { ...first, id: "run-final", trigger: "task_continue" };
+    deps.prisma.run.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
+      where.id === final.id ? final : first,
+    );
+    await deliverMessagingOutbound(deps, { runId: first.id }, context);
+    await deliverMessagingOutbound(deps, { runId: final.id }, context);
+    expect(deps.prisma.message.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { runId: final.id, role: "bot" } }),
+    );
+    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
+    expect(deps.prisma.run.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: [first.id, final.id] }, trigger: { in: ["messaging", "task_continue"] } },
+      data: { messagingMirroredAt: expect.any(Date) },
+    });
+  });
+
+  it("does not send a delegated child's result to the owner's messaging provider", async () => {
+    const deps = createDeps({
+      run: {
+        ...messagingRun,
+        trigger: "task_delegation",
+        task: { protocol: "coordination_v1", parentTaskId: "parent", status: "completed" },
+      },
+    });
+    await deliverMessagingOutbound(deps, { runId: messagingRun.id }, context);
+    expect(deps.prisma.message.findMany).not.toHaveBeenCalled();
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+  });
+
   it("mirrors a messaging DM run's bot text to the identity's conversation", async () => {
     const deps = createDeps({});
     await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
@@ -207,7 +252,7 @@ describe("deliverMessagingOutbound", () => {
       expect.objectContaining({ data: { outboundSinceInbound: { increment: 1 } } }),
     );
     expect(deps.prisma.run.updateMany).toHaveBeenCalledWith({
-      where: { id: "run-1", trigger: "messaging" },
+      where: { id: { in: ["run-1"] }, trigger: { in: ["messaging", "task_continue"] } },
       data: { messagingMirroredAt: expect.any(Date) },
     });
   });

@@ -7,6 +7,8 @@ import {
   ringingCall,
   userVisibleMessages,
 } from "@rakazo/core";
+import type { BotManager } from "./bot-management.js";
+import { lockBotManagement } from "./bot-management.js";
 import type { PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
 import { ensureComputerRecord, parseComputerMode } from "./computers.js";
@@ -80,6 +82,7 @@ function mapBot(
     teamChatAmbientEnabled?: boolean;
     teamChatRules?: string;
     fleetManagement?: boolean;
+    managementRole?: string;
     disabledBuiltinTools?: string[];
     webhookSecretId?: string | null;
     spawnKey?: string | null;
@@ -125,6 +128,7 @@ function mapBot(
     teamChatAmbientEnabled: bot.teamChatAmbientEnabled ?? false,
     teamChatRules: bot.teamChatRules ?? "",
     fleetManagement: bot.fleetManagement ?? false,
+    managementRole: bot.managementRole === "chief" ? "chief" : "member",
     disabledBuiltinTools: bot.disabledBuiltinTools ?? [],
     webhookConfigured: Boolean(bot.webhookSecretId),
     spawnKey: bot.spawnKey ?? null,
@@ -174,6 +178,7 @@ export function createRepos(
         sectionId: true,
         updatedAt: true,
         parentBotId: true,
+        managementRole: true,
         thread: {
           select: {
             unread: true,
@@ -184,6 +189,14 @@ export function createRepos(
             },
             runs: latestBotRunSelection,
           },
+        },
+        tasks: {
+          where: {
+            protocol: "coordination_v1",
+            status: { in: ["waiting_children", "waiting_input"] },
+          },
+          select: { status: true },
+          take: 1,
         },
         runs: activeRunSelection,
       },
@@ -202,8 +215,9 @@ export function createRepos(
         sectionId: bot.sectionId,
         unread: bot.thread.unread,
         parentBotId: bot.parentBotId,
+        managementRole: bot.managementRole === "chief" ? "chief" : "member",
         preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
-        status: bot.runs[0]?.status ?? "idle",
+        status: bot.runs[0]?.status ?? (bot.tasks[0] ? "waiting_children" : "idle"),
         runErrorId: rosterRunErrorId(bot.thread.runs[0], bot.runs[0]),
         updatedAt: rosterUpdatedAt(bot.thread.messages[0], bot.updatedAt).toISOString(),
       };
@@ -355,6 +369,14 @@ export function createRepos(
               runs: latestBotRunSelection,
             },
           },
+          tasks: {
+            where: {
+              protocol: "coordination_v1",
+              status: { in: ["waiting_children", "waiting_input"] },
+            },
+            select: { status: true },
+            take: 1,
+          },
           runs: activeRunSelection,
           computer: { select: { scope: true } },
         },
@@ -451,7 +473,7 @@ export function createRepos(
           return mapBot(
             bot,
             preview,
-            bot.runs[0]?.status ?? "idle",
+            bot.runs[0]?.status ?? (bot.tasks[0] ? "waiting_children" : "idle"),
             rosterRunErrorId(bot.thread?.runs[0], bot.runs[0]),
             updatedAt,
             ringingCall(
@@ -496,6 +518,7 @@ export function createRepos(
         modelId?: string | null;
         thinkingLevel?: string | null;
         disabledBuiltinTools?: string[];
+        manager?: BotManager;
         initialMessage?: {
           role: "user" | "bot" | "system";
           blocks: MessageBlock[];
@@ -542,6 +565,7 @@ export function createRepos(
             spaceId: actor.spaceId,
             userId: actor.userId,
           });
+          if (input.manager) await lockBotManagement(tx, actor.spaceId, input.manager);
           const positions = await tx.bot.aggregate({
             where: { spaceId: actor.spaceId, userId: actor.userId },
             _max: { position: true },

@@ -5,6 +5,7 @@ import {
   encodeLoginSecret,
   LoginSecretValue,
   MessageBlock as MessageBlockSchema,
+  TASK_PROTOCOL,
 } from "@rakazo/contracts";
 import {
   blocksToAgentHistoryText,
@@ -31,6 +32,12 @@ import {
   createThreadMessageInTransaction,
   RunHistoryWriteError,
 } from "./messages.js";
+import {
+  cancelCoordinatedTask,
+  coordinatedRootData,
+  finishCoordinatedTask,
+  lockTaskTree,
+} from "./task-coordination.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 const EVENT_BATCH_SIZE = 200;
@@ -110,6 +117,7 @@ export interface ClaimedSteeringMessage {
 
 export interface FinalizeRunResult {
   continuationRunId: string | null;
+  taskCompleted?: boolean;
 }
 
 interface FinalizeRunBase {
@@ -121,6 +129,7 @@ interface FinalizeRunBase {
   attemptId: string;
   leaseOwner: string;
   leaseFence: number;
+  taskProtocol?: string;
 }
 
 export type FinalizeRunInput = FinalizeRunBase &
@@ -302,6 +311,18 @@ export async function clearThread(
       data: { unread: false },
       select: { nextMessageSeq: true, historyCompactionGeneration: true },
     });
+    const tasks = await tx.task.findMany({
+      where: {
+        threadId: input.threadId,
+        protocol: TASK_PROTOCOL,
+        status: { notIn: ["completed", "failed", "cancelled"] },
+      },
+    });
+    for (const task of tasks.sort((a, b) =>
+      (a.rootTaskId ?? a.id).localeCompare(b.rootTaskId ?? b.id),
+    )) {
+      await cancelCoordinatedTask(tx, task.id, "The conversation was cleared.");
+    }
     const activeRuns = await tx.run.findMany({
       where: {
         spaceId: input.spaceId,
@@ -441,6 +462,15 @@ export async function sendUserMessage(
       let task = null;
       let run = null;
       if (createRun && !busy) {
+        const targetThread = await tx.thread.findUnique({
+          where: { id: input.threadId },
+          select: { groupId: true, externalConversationId: true },
+        });
+        const coordinated =
+          targetThread &&
+          !targetThread.groupId &&
+          !targetThread.externalConversationId &&
+          !hasChannelMessage(input.blocks);
         task = await tx.task.create({
           data: {
             spaceId: input.spaceId,
@@ -449,6 +479,13 @@ export async function sendUserMessage(
             userId: input.userId,
             prompt: input.prompt,
             status: "queued",
+            ...(coordinated
+              ? coordinatedRootData({
+                  prompt: input.prompt,
+                  sourceMessageId: message.id,
+                  ownerAuthorized: input.trigger === "user" || input.trigger === "follow_up",
+                })
+              : {}),
           },
         });
         run = await tx.run.create({
@@ -476,6 +513,12 @@ export async function sendUserMessage(
           await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
         }
       } else if (createRun && busy) {
+        if (input.trigger === "messaging" || input.trigger === "webhook") {
+          await tx.task.updateMany({
+            where: { id: busy.taskId, protocol: TASK_PROTOCOL },
+            data: { externalInfluence: true },
+          });
+        }
         const held = input.trigger === "webhook" || !isConversationalRun(busy.trigger);
         await tx.steeringMessage.create({
           data: {
@@ -496,7 +539,10 @@ export async function sendUserMessage(
               : {}),
           },
         });
-        await tx.message.update({ where: { id: message.id }, data: { runId: busy.id } });
+        await tx.message.update({
+          where: { id: message.id },
+          data: { runId: held ? null : busy.id },
+        });
       }
       const event = await appendEventInTransaction(tx, {
         spaceId: input.spaceId,
@@ -550,6 +596,7 @@ export async function claimSteering(
       },
       select: {
         id: true,
+        taskId: true,
         spaceId: true,
         trigger: true,
         sourceMessage: { select: { blocks: true } },
@@ -590,6 +637,14 @@ export async function claimSteering(
       orderBy: [{ message: { seq: "asc" } }, { id: "asc" }],
     });
     if (steering.length === 0) return [];
+    if (
+      steering.some((item) => item.originTrigger != null || hasChannelMessage(item.message.blocks))
+    ) {
+      await tx.task.updateMany({
+        where: { id: run.taskId, protocol: TASK_PROTOCOL },
+        data: { externalInfluence: true },
+      });
+    }
     await tx.steeringMessage.updateMany({
       where: { id: { in: steering.map((item) => item.id) }, claimedAt: null },
       data: { runId: input.runId, claimedAt: new Date() },
@@ -658,6 +713,7 @@ async function commitAnswerRunInput(
       status: "waiting_input",
     },
     select: {
+      taskId: true,
       botId: true,
       userId: true,
       checkpoint: true,
@@ -666,6 +722,7 @@ async function commitAnswerRunInput(
     },
   });
   if (!run) return null;
+  if (run.taskId) await lockTaskTree(tx, run.taskId);
   const message = await tx.message.findFirst({
     where: {
       id: input.messageId,
@@ -752,6 +809,11 @@ async function commitAnswerRunInput(
     },
   });
   if (queued.count !== 1) return null;
+  if (run.taskId)
+    await tx.task.updateMany({
+      where: { id: run.taskId, protocol: TASK_PROTOCOL },
+      data: { status: "queued" },
+    });
 
   const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? approvalAnswer);
   const callId = callIdFromClientNonce(input.clientNonce);
@@ -971,6 +1033,11 @@ export async function pauseRunForInput(
     // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
     // concurrent clear cannot deadlock against this transaction.
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
+    const taskRun = await tx.run.findUnique({
+      where: { id: input.runId },
+      select: { taskId: true },
+    });
+    if (taskRun?.taskId) await lockTaskTree(tx, taskRun.taskId);
     const paused = await tx.run.updateMany({
       where: {
         id: input.runId,
@@ -991,6 +1058,11 @@ export async function pauseRunForInput(
       },
     });
     if (paused.count !== 1) return null;
+    if (taskRun?.taskId)
+      await tx.task.updateMany({
+        where: { id: taskRun.taskId, protocol: TASK_PROTOCOL },
+        data: { status: "waiting_input" },
+      });
     await expireComputerExecutionLeases(tx, { runId: input.runId });
 
     const attempt = await tx.attempt.updateMany({
@@ -1044,6 +1116,11 @@ export async function pauseRunForTakeover(
 ): Promise<boolean> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
+    const taskRun = await tx.run.findUnique({
+      where: { id: input.runId },
+      select: { taskId: true },
+    });
+    if (taskRun?.taskId) await lockTaskTree(tx, taskRun.taskId);
     const paused = await tx.run.updateMany({
       where: {
         id: input.runId,
@@ -1147,6 +1224,16 @@ export async function finalizeComputerControlRelease(
 ): Promise<FinalizeComputerControlReleaseResult | false> {
   if (!input.leaseId && !input.runId) return false;
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    if (input.runId) {
+      const taskRun = await tx.run.findUnique({
+        where: { id: input.runId },
+        select: { taskId: true, threadId: true },
+      });
+      if (taskRun?.taskId && taskRun.threadId) {
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${taskRun.threadId} FOR UPDATE`;
+        await lockTaskTree(tx, taskRun.taskId);
+      }
+    }
     const cleared = await tx.computer.updateMany({
       where: input.leaseId
         ? {
@@ -1332,7 +1419,10 @@ export async function finalizeRun(
   const committed = await withTransactionRetry(() => finalizeRunOnce(prisma, input));
   if (!committed) return false;
   await notifyRealtime(realtime, committed.threadId, committed.seq);
-  return { continuationRunId: committed.continuationRunId };
+  return {
+    continuationRunId: committed.continuationRunId,
+    ...(committed.taskCompleted === undefined ? {} : { taskCompleted: committed.taskCompleted }),
+  };
 }
 
 /** Stamps one turn-level wall-clock duration on the final tool block. */
@@ -1356,9 +1446,15 @@ export function completedRunBlocks(
 async function finalizeRunOnce(
   prisma: PrismaClient,
   input: FinalizeRunInput,
-): Promise<{ threadId: string; seq: number; continuationRunId: string | null } | null> {
+): Promise<{
+  threadId: string;
+  seq: number;
+  continuationRunId: string | null;
+  taskCompleted?: boolean;
+} | null> {
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
+    const taskForFinalization = await lockTaskTree(tx, input.taskId);
     let writableRun: { startedAt: Date | null } | undefined;
     try {
       writableRun = await assertRunCanWriteHistory(tx, input.runId);
@@ -1403,16 +1499,27 @@ async function finalizeRunOnce(
     });
     if (attempt.count !== 1) throw new Error("Active run attempt was not available to finalize");
 
-    const task = await tx.task.updateMany({
-      where: {
-        id: input.taskId,
-        spaceId: input.spaceId,
-        threadId: input.threadId,
-        botId: input.botId,
-      },
-      data: { status: input.outcome },
-    });
-    if (task.count !== 1) throw new Error("Run task was not available to finalize");
+    const coordination =
+      taskForFinalization?.protocol === TASK_PROTOCOL
+        ? await finishCoordinatedTask(tx, {
+            taskId: input.taskId,
+            runId: input.runId,
+            outcome: input.outcome,
+            ...(input.outcome === "completed" ? { blocks: input.blocks } : { error: input.error }),
+          })
+        : null;
+    if (!coordination) {
+      const task = await tx.task.updateMany({
+        where: {
+          id: input.taskId,
+          spaceId: input.spaceId,
+          threadId: input.threadId,
+          botId: input.botId,
+        },
+        data: { status: input.outcome },
+      });
+      if (task.count !== 1) throw new Error("Run task was not available to finalize");
+    }
 
     if (input.outcome === "completed") {
       const completedBlocks = completedRunBlocks(input.blocks, writableRun?.startedAt ?? null, now);
@@ -1441,7 +1548,10 @@ async function finalizeRunOnce(
       botId: input.botId,
       type: input.outcome === "completed" ? "run.completed" : "run.failed",
       runId: input.runId,
-      payload: input.outcome === "completed" ? {} : { error: input.error },
+      payload: {
+        ...(input.outcome === "failed" ? { error: input.error } : {}),
+        ...(coordination ? { taskId: input.taskId, taskCompleted: coordination.terminal } : {}),
+      },
     });
     await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
     if (input.outcome === "completed") {
@@ -1468,9 +1578,15 @@ async function finalizeRunOnce(
         data: { runId: null },
       });
     }
-    const continuationRunId = await createPendingSteeringRun(tx, input);
+    const continuationRunId =
+      coordination?.continuationRunId ?? (await createPendingSteeringRun(tx, input));
     await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
-    return { threadId: lastEvent.threadId, seq: lastEvent.seq, continuationRunId };
+    return {
+      threadId: lastEvent.threadId,
+      seq: lastEvent.seq,
+      continuationRunId,
+      ...(coordination ? { taskCompleted: coordination.terminal } : {}),
+    };
   });
 }
 
@@ -1544,16 +1660,33 @@ export async function createPendingSteeringRun(
   const batch = pending.filter((item) => steeringOrigin(item) === origin);
   const source = batch.at(-1)!;
   const modelPin = continuationModelPin(batch);
+  const thread = await tx.thread.findUnique({
+    where: { id: input.threadId },
+    select: { groupId: true, externalConversationId: true },
+  });
+  const prompt = batch
+    .map((item) => blocksToAgentHistoryText(item.message.blocks as MessageBlock[]))
+    .join("\n\n");
   const task = await tx.task.create({
     data: {
       spaceId: input.spaceId,
       botId: input.botId,
       threadId: input.threadId,
       userId: batch[0]!.userId,
-      prompt:
-        origin === "webhook"
-          ? blocksToAgentHistoryText(source.message.blocks as MessageBlock[])
-          : "Respond to the user's steering context.",
+      prompt,
+      ...(!thread?.groupId &&
+      !thread?.externalConversationId &&
+      !batch.some((item) => hasChannelMessage(item.message.blocks))
+        ? coordinatedRootData({
+            prompt,
+            sourceMessageId: source.message.id,
+            ownerAuthorized:
+              origin === "private" &&
+              batch.every(
+                (item) => item.originTrigger === null && !hasChannelMessage(item.message.blocks),
+              ),
+          })
+        : {}),
       status: "queued",
     },
   });
@@ -1580,6 +1713,10 @@ export async function createPendingSteeringRun(
       sourceMessageId: source.message.id,
       ...(modelPin ?? {}),
     },
+  });
+  await tx.message.updateMany({
+    where: { id: { in: batch.map((item) => item.messageId) } },
+    data: { runId: run.id },
   });
   await tx.steeringMessage.updateMany({
     where: { id: { in: batch.map((item) => item.id) }, runId: null },

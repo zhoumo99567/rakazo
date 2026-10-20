@@ -136,14 +136,20 @@ export async function restoreBotUnderComputerQuota(
       await lockUserForComputerQuota(tx, input.userId);
       await assertComputerQuotaForRestore(tx, input);
     }
-    await tx.bot.update({ where: { id: input.botId }, data: { archivedAt: null } });
+    await tx.bot.update({
+      where: { id: input.botId, archiveCleanupPending: false },
+      data: { archivedAt: null, archiveOperationKey: null },
+    });
   }
 
   if (isTransactionClient(prisma)) {
     return restore(prisma as RestoreTx);
   }
   if (limit <= 0) {
-    await prisma.bot.update({ where: { id: input.botId }, data: { archivedAt: null } });
+    await prisma.bot.update({
+      where: { id: input.botId, archiveCleanupPending: false },
+      data: { archivedAt: null, archiveOperationKey: null },
+    });
     return;
   }
   if (typeof prisma.$transaction === "function") {

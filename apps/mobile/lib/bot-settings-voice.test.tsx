@@ -52,6 +52,7 @@ vi.mock("./api", () => ({
         title: "",
         computerMode: "team",
         fleetManagement: false,
+        managementRole: "member",
       };
     if (procedure === "me") return {};
     return [];
@@ -202,10 +203,32 @@ describe("bot settings device voice menu", () => {
   const render = async () => act(async () => root.render(<BotSettingsScreen />));
   const menu = () => container.querySelector('[data-menu="Device voice"]');
 
+  it("saves the Chief role independently from the profile", async () => {
+    await render();
+    mocks.rpc.mockResolvedValue(undefined).mockClear();
+    const role = container.querySelector('[data-menu="Role"]')!;
+    await act(async () => {
+      role.querySelectorAll("button")[1]!.click();
+    });
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith("bots/update", {
+      botId: "bot-fixture",
+      managementRole: "chief",
+    });
+    mocks.rpc.mockClear();
+    const save = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Save",
+    )!;
+    await act(async () => {
+      save.click();
+    });
+    for (const [, input] of mocks.rpc.mock.calls)
+      expect(input).not.toHaveProperty("managementRole");
+  });
+
   it("persists fleet toggles immediately without adding them to unrelated saves", async () => {
     mocks.rpc.mockResolvedValue(undefined);
     await render();
-    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Fleet management"]');
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Group management"]');
     if (!toggle) throw new Error("Missing fleet switch");
     await act(async () => {
       toggle.click();
@@ -229,7 +252,7 @@ describe("bot settings device voice menu", () => {
   it("restores the fleet toggle when saving fails", async () => {
     mocks.rpc.mockRejectedValueOnce(new Error("offline"));
     await render();
-    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Fleet management"]');
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Group management"]');
     if (!toggle) throw new Error("Missing fleet switch");
     await act(async () => {
       toggle.click();
@@ -355,7 +378,7 @@ describe("bot settings device voice menu", () => {
       expect(label.parentElement!.lastElementChild!.getAttribute("data-style")).toContain(
         '"textAlign":"right"',
       );
-      expect(container.querySelector("i")).toBeNull();
+      expect(container.querySelectorAll("i")).toHaveLength(1);
     },
   );
 
@@ -363,7 +386,7 @@ describe("bot settings device voice menu", () => {
     mocks.deviceVoices.mockRejectedValueOnce(new Error("Load failed"));
     await render();
     expect(menu()).toBeNull();
-    expect(container.querySelector("i")).toBeNull();
+    expect(container.querySelectorAll("i")).toHaveLength(1);
     const retry = () =>
       [...container.querySelectorAll("button")].find((item) =>
         item.textContent?.includes("Could not load voices"),

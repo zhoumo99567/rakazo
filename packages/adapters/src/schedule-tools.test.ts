@@ -1,3 +1,7 @@
+vi.mock("../../db/src/bot-management.js", () => ({
+  lockBotManagement: vi.fn(async () => undefined),
+}));
+
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -255,7 +259,10 @@ describe("schedule tool persistence", () => {
       ...args.data,
     }));
     const deps = {
-      prisma: { routine: { create } },
+      prisma: {
+        routine: { create },
+        $transaction: async (work: (tx: unknown) => unknown) => work({ routine: { create } }),
+      },
       events: { append },
       jobs: { enqueue, cancel: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
@@ -266,6 +273,7 @@ describe("schedule tool persistence", () => {
       userId: "user-1",
       threadId: "thread-1",
       target: { botId: "child-1", threadId: "child-thread-1" },
+      manager: { botId: "bot-1", userId: "user-1", runId: "run-1" },
       name: "Morning joke",
       prompt: "Tell a joke",
       schedule: { every: 1, unit: "minutes" },

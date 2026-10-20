@@ -1,7 +1,12 @@
 import { ORPCError } from "@orpc/server";
 import type { JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
-import { cancelComputerRunWork, screenLeaseIdForRun, toComputerRef } from "@rakazo/adapters";
+import {
+  cancelComputerRunWork,
+  reconcileTaskCleanup,
+  screenLeaseIdForRun,
+  toComputerRef,
+} from "@rakazo/adapters";
 import type {
   Actor,
   GroupMember,
@@ -27,12 +32,16 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   answerWaitingRunWithTextInTransaction,
   appendEventInTransaction,
+  cancelCoordinatedTask,
+  cancelRunsInTransaction,
+  coordinatedRootData,
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
   expireComputerExecutionLeases,
   IsolationError,
   lockOwnedGroup,
+  lockTaskTree,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -238,15 +247,7 @@ export async function cancelSupersededQueuedRuns(
     select: { id: true, taskId: true },
   });
   if (superseded.length === 0) return;
-  const now = new Date();
-  await tx.run.updateMany({
-    where: { id: { in: superseded.map((run) => run.id) } },
-    data: { status: "cancelled", completedAt: now },
-  });
-  await tx.task.updateMany({
-    where: { id: { in: superseded.map((run) => run.taskId) } },
-    data: { status: "cancelled" },
-  });
+  await cancelRunsInTransaction(tx, superseded, new Date());
 }
 
 async function lockAndLoadGroupMembers(
@@ -768,7 +769,10 @@ export async function sendThreadMessage(
               runId: steersUserMessage(active) ? active.id : null,
             },
           });
-          await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
+          await tx.message.update({
+            where: { id: message.id },
+            data: { runId: steersUserMessage(active) ? active.id : null },
+          });
           const event = await appendEventInTransaction(tx, {
             spaceId: actor.spaceId,
             threadId: target.threadId,
@@ -794,6 +798,11 @@ export async function sendThreadMessage(
             threadId: target.threadId,
             userId: actor.userId,
             prompt: buildSendPrompt(input.text, artifacts, connectorNames),
+            ...coordinatedRootData({
+              prompt: buildSendPrompt(input.text, artifacts, connectorNames),
+              sourceMessageId: message.id,
+              ownerAuthorized: true,
+            }),
             status: "queued",
           },
         });
@@ -1235,79 +1244,104 @@ export async function stopThreadRuns(
   actor: Actor,
   target: ThreadTarget,
 ) {
-  const { runIds, computers, leases, eventSeq } = await deps.prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
-    const cancelled = await tx.run.updateManyAndReturn({
-      where: {
-        threadId: target.threadId,
-        status: { in: [...ACTIVE_RUN_STATUSES] },
-      },
-      data: { status: "cancelled", completedAt: new Date() },
-      select: { id: true, botId: true },
-    });
-    const ids = cancelled.map((run) => run.id);
-    await tx.steeringMessage.deleteMany({
-      where: {
-        botId: { in: target.kind === "bot" ? [target.botId] : target.memberBotIds },
-        message: { threadId: target.threadId },
-      },
-    });
-    // Snapshot teardown coordinates before commit. Once cancellation becomes
-    // visible, a worker can release its lease / execution columns immediately; a
-    // later lookup would then miss the sandbox work this request must stop.
-    // Team ownership lives on ComputerExecutionLease; Computer.executionRunId is
-    // only a legacy secondary path and is not written by current acquisition.
-    const leases = ids.length
-      ? await tx.computerExecutionLease.findMany({
-          where: { runId: { in: ids } },
-          select: { computerId: true, botId: true, runId: true, fence: true },
-        })
-      : [];
-    const leaseComputerIds = [...new Set(leases.map((lease) => lease.computerId))];
-    const computers = ids.length
-      ? await tx.computer.findMany({
-          where:
-            leaseComputerIds.length > 0
-              ? {
-                  OR: [{ id: { in: leaseComputerIds } }, { executionRunId: { in: ids } }],
-                }
-              : { executionRunId: { in: ids } },
-          select: {
-            id: true,
-            homeKey: true,
-            kind: true,
-            providerRef: true,
-            executionBotId: true,
-            executionRunId: true,
-          },
-        })
-      : [];
-    // One terminal event per cancelled run, in the same commit as the status
-    // flip and the progress purge below. Other clients learn the run ended, and
-    // the fresh seq keeps max(seq) above every deleted progress row so a client
-    // whose cursor pointed at one never discards later refreshes as stale.
-    let eventSeq: number | null = null;
-    for (const run of cancelled) {
-      const event = await appendEventInTransaction(tx, {
-        spaceId: actor.spaceId,
-        threadId: target.threadId,
-        botId: run.botId,
-        type: "run.cancelled",
-        runId: run.id,
-        payload: {},
-      });
-      eventSeq = event.seq;
-    }
-    if (ids.length) {
-      await tx.event.deleteMany({
+  const { runIds, cleanupRunIds, computers, leases, eventSeq } = await deps.prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+      const tasks = await tx.task.findMany({
         where: {
-          type: "thread.progress",
-          runId: { in: ids },
+          threadId: target.threadId,
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          protocol: "coordination_v1",
+          status: { notIn: ["completed", "failed", "cancelled"] },
         },
       });
-    }
-    return { runIds: ids, computers, leases, eventSeq };
-  });
+      for (const task of [...tasks].sort((a, b) =>
+        (a.rootTaskId ?? a.id).localeCompare(b.rootTaskId ?? b.id),
+      ))
+        await lockTaskTree(tx, task.id);
+      const cancelled = await tx.run.findMany({
+        where: {
+          threadId: target.threadId,
+          status: { in: [...ACTIVE_RUN_STATUSES] },
+        },
+        select: { id: true, botId: true },
+      });
+      const ids = cancelled.map((run) => run.id);
+      await tx.steeringMessage.deleteMany({
+        where: {
+          botId: { in: target.kind === "bot" ? [target.botId] : target.memberBotIds },
+          message: { threadId: target.threadId },
+        },
+      });
+      // Snapshot teardown coordinates before commit. Once cancellation becomes
+      // visible, a worker can release its lease / execution columns immediately; a
+      // later lookup would then miss the sandbox work this request must stop.
+      // Team ownership lives on ComputerExecutionLease; Computer.executionRunId is
+      // only a legacy secondary path and is not written by current acquisition.
+      const leases = ids.length
+        ? await tx.computerExecutionLease.findMany({
+            where: { runId: { in: ids } },
+            select: { computerId: true, botId: true, runId: true, fence: true },
+          })
+        : [];
+      const leaseComputerIds = [...new Set(leases.map((lease) => lease.computerId))];
+      const computers = ids.length
+        ? await tx.computer.findMany({
+            where:
+              leaseComputerIds.length > 0
+                ? {
+                    OR: [{ id: { in: leaseComputerIds } }, { executionRunId: { in: ids } }],
+                  }
+                : { executionRunId: { in: ids } },
+            select: {
+              id: true,
+              homeKey: true,
+              kind: true,
+              providerRef: true,
+              executionBotId: true,
+              executionRunId: true,
+            },
+          })
+        : [];
+      const cleanupRunIds: string[] = [];
+      for (const task of tasks.sort((a, b) =>
+        (a.rootTaskId ?? a.id).localeCompare(b.rootTaskId ?? b.id),
+      )) {
+        const cancelled = await cancelCoordinatedTask(tx, task.id, "Stopped by the user.");
+        if (cancelled) cleanupRunIds.push(...cancelled.cancelledRunIds);
+      }
+      await tx.run.updateMany({
+        where: { id: { in: ids }, status: { in: [...ACTIVE_RUN_STATUSES] } },
+        data: { status: "cancelled", completedAt: new Date() },
+      });
+      // One terminal event per cancelled run, in the same commit as the status
+      // flip and the progress purge below. Other clients learn the run ended, and
+      // the fresh seq keeps max(seq) above every deleted progress row so a client
+      // whose cursor pointed at one never discards later refreshes as stale.
+      let eventSeq: number | null = null;
+      for (const run of cancelled) {
+        const event = await appendEventInTransaction(tx, {
+          spaceId: actor.spaceId,
+          threadId: target.threadId,
+          botId: run.botId,
+          type: "run.cancelled",
+          runId: run.id,
+          payload: {},
+        });
+        eventSeq = event.seq;
+      }
+      if (ids.length) {
+        await tx.event.deleteMany({
+          where: {
+            type: "thread.progress",
+            runId: { in: ids },
+          },
+        });
+      }
+      return { runIds: ids, cleanupRunIds, computers, leases, eventSeq };
+    },
+  );
   if (eventSeq !== null) {
     // The events are durable; subscribers refetch from their persisted cursor.
     await deps.events.notify(target.threadId, eventSeq).catch((error) => {
@@ -1316,6 +1350,7 @@ export async function stopThreadRuns(
   }
   // Keep the DB lease until after teardown so a replacement run cannot claim the
   // screen while we still need the cancelled run's screenLeaseId to release it.
+  if (cleanupRunIds.length) await reconcileTaskCleanup(deps, cleanupRunIds);
   const computerById = new Map(computers.map((computer) => [computer.id, computer]));
   const teardownTargets: Array<{
     computer: (typeof computers)[number];
@@ -1325,6 +1360,7 @@ export async function stopThreadRuns(
   }> = [];
   const seenTargets = new Set<string>();
   for (const lease of leases) {
+    if (cleanupRunIds.includes(lease.runId)) continue;
     const computer = computerById.get(lease.computerId);
     if (!computer) continue;
     const key = `${computer.id}:${lease.runId}`;
@@ -1339,7 +1375,12 @@ export async function stopThreadRuns(
   }
   const cancelledRunIds = new Set(runIds);
   for (const computer of computers) {
-    if (!computer.executionBotId || !computer.executionRunId) continue;
+    if (
+      !computer.executionBotId ||
+      !computer.executionRunId ||
+      cleanupRunIds.includes(computer.executionRunId)
+    )
+      continue;
     // Computers may enter the snapshot via a cancelled lease while
     // Computer.executionRunId still points at an unrelated live run. Only treat
     // the legacy columns as a teardown target when they belong to a run we
@@ -1374,9 +1415,10 @@ export async function stopThreadRuns(
       await deps.sandbox.releaseScreen?.(ref, context).catch(() => undefined);
     }),
   );
-  await expireComputerExecutionLeases(deps.prisma, { runId: { in: runIds } });
+  const legacyRunIds = runIds.filter((id) => !cleanupRunIds.includes(id));
+  await expireComputerExecutionLeases(deps.prisma, { runId: { in: legacyRunIds } });
   await deps.prisma.computer.updateMany({
-    where: { executionRunId: { in: runIds } },
+    where: { executionRunId: { in: legacyRunIds } },
     data: {
       executionRunId: null,
       executionBotId: null,

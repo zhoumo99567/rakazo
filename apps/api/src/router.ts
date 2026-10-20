@@ -100,6 +100,7 @@ import {
   probeOpenAiCompatibleModels,
   provisionComputer,
   queueComputerUpdate,
+  reconcileTaskCleanup,
   releaseComputerExecutionLease,
   replaceComputer,
   resolveAutoReviewChecker,
@@ -184,6 +185,7 @@ import {
   CannotDeleteSpaceAsNonOwnerError,
   CannotRenameSpaceAsNonOwnerError,
   ComputerLimitError,
+  cancelOwnedTask,
   claimEmptySpaceDeletionForMember,
   commitBotUpdate,
   comparePreferenceOrder,
@@ -207,6 +209,7 @@ import {
   IsolationError,
   issueMessagingLinkCode,
   listBoards,
+  listOwnedTasks,
   listSpaceBackupModels,
   listTicketComments,
   lockOwnedGroup,
@@ -1835,6 +1838,7 @@ export function createRouter(deps: RouterDeps) {
             ...(input.fleetManagement !== undefined
               ? { fleetManagement: input.fleetManagement }
               : {}),
+            ...(input.managementRole !== undefined ? { managementRole: input.managementRole } : {}),
             ...(input.disabledBuiltinTools !== undefined
               ? { disabledBuiltinTools: input.disabledBuiltinTools }
               : {}),
@@ -1961,7 +1965,10 @@ export function createRouter(deps: RouterDeps) {
               computerId: bot.computer.id,
             });
           } else {
-            await deps.prisma.bot.update({ where: { id: bot.id }, data: { archivedAt: null } });
+            await deps.prisma.bot.update({
+              where: { id: bot.id, archiveCleanupPending: false },
+              data: { archivedAt: null, archiveOperationKey: null },
+            });
           }
         } catch (error) {
           throw mapSpaceLifecycleError(error);
@@ -6290,6 +6297,22 @@ export function createRouter(deps: RouterDeps) {
     links: {
       favicon: authed.links.favicon.handler(async ({ input }) => favicons.favicon(input.origin)),
     },
+    tasks: {
+      list: authed.tasks.list.handler(async ({ context, input }) =>
+        listOwnedTasks(deps.prisma, context.actor, input),
+      ),
+      cancel: authed.tasks.cancel.handler(async ({ context, input }) => {
+        const result = await cancelOwnedTask(deps.prisma, context.actor, input.taskId);
+        await Promise.all(
+          result.cancelledRunIds.map((id) =>
+            deps.jobs.cancel(runJobKey(id)).catch(() => undefined),
+          ),
+        );
+        await reconcileTaskCleanup(deps, result.cancelledRunIds);
+        await deps.events.notify(result.threadId, result.seq);
+        return { ok: true };
+      }),
+    },
     runs: {
       list: authed.runs.list.handler(async ({ context, input }) => ({
         runs: await listSpaceRuns(deps.prisma, context.actor, input.filter),
@@ -6514,6 +6537,7 @@ async function spaceNavigationDto(
         bots: spaceBots.map((bot) => ({
           id: bot.id,
           parentBotId: bot.parentBotId,
+          managementRole: bot.managementRole,
           spaceId: bot.spaceId,
           name: bot.name,
           title: bot.title,

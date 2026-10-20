@@ -511,7 +511,9 @@ export async function acquireDedicatedScreenLeaseFence(
     if (assignedBot.length !== 1) throw new ComputerBusyError();
 
     const computer = await tx.$queryRaw<Array<{ id: string; scope: string }>>`
-      SELECT id, scope FROM computers WHERE id = ${input.computerId} FOR UPDATE SKIP LOCKED`;
+      SELECT id, scope FROM computers WHERE id = ${input.computerId}
+        AND NOT EXISTS (SELECT 1 FROM task_run_cleanups c WHERE c."computerId" = computers.id AND c."botId" = ${input.botId} AND c."completedAt" IS NULL)
+        FOR UPDATE SKIP LOCKED`;
     if (computer.length !== 1 || computer[0]?.scope !== "dedicated") {
       throw new ComputerBusyError();
     }
@@ -588,7 +590,17 @@ export async function acquireComputerExecutionLease(
     resumeHeldLease?: boolean;
   },
 ): Promise<ComputerExecutionLease | null> {
-  const computer = await prisma.computer.findUniqueOrThrow({ where: { id: input.computerId } });
+  const computer = await prisma.computer.findUniqueOrThrow({
+    where: { id: input.computerId },
+    include: {
+      taskCleanups: {
+        where: { botId: input.botId, completedAt: null },
+        select: { runId: true },
+        take: 1,
+      },
+    },
+  });
+  if (computer.taskCleanups?.length) throw new ComputerBusyError();
   if (computer.maintenanceId && computer.maintenanceId !== input.runId)
     throw new ComputerBusyError();
   if (computer.scope !== "team") return null;
@@ -599,6 +611,7 @@ export async function acquireComputerExecutionLease(
     where: {
       computerId: input.computerId,
       botId: input.botId,
+      computer: { taskCleanups: { none: { botId: input.botId, completedAt: null } } },
       OR: [{ expiresAt: { lt: now } }, ...(input.resumeHeldLease ? [{ runId: input.runId }] : [])],
     },
     data: {
@@ -645,9 +658,19 @@ async function validateAcquiredComputerLease(
 ): Promise<ComputerExecutionLease> {
   const computer = await prisma.computer.findUniqueOrThrow({
     where: { id: lease.computerId },
-    select: { state: true, maintenanceId: true, updatedAt: true },
+    select: {
+      state: true,
+      maintenanceId: true,
+      updatedAt: true,
+      taskCleanups: {
+        where: { botId: lease.botId, completedAt: null },
+        select: { runId: true },
+        take: 1,
+      },
+    },
   });
   if (
+    !computer.taskCleanups?.length &&
     !isLiveSuspending(computer) &&
     (!computer.maintenanceId || computer.maintenanceId === lease.runId)
   )

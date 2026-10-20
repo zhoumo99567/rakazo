@@ -1,5 +1,7 @@
 import { getLogger } from "@rakazo/logging";
 import { writeBotInstructions } from "./bot-instructions.js";
+import type { BotManager } from "./bot-management.js";
+import { lockBotManagement } from "./bot-management.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { appendEventInTransaction } from "./events.js";
 
@@ -19,6 +21,9 @@ export async function commitBotUpdate(
     botId: string;
     data: Omit<Prisma.BotUncheckedUpdateInput, "instructions"> & { instructions?: string };
     emitBotUpdated: boolean;
+    manager?: BotManager;
+    expectedUpdatedAt?: Date;
+    sectionName?: string;
     expectedInstructions?: string;
     expectedModel?: {
       modelProvider: string | null;
@@ -31,6 +36,10 @@ export async function commitBotUpdate(
   appendEvent: AppendEvent = appendEventInTransaction,
 ): Promise<{ id: string; name: string; title: string; description: string }> {
   if (
+    !options.manager &&
+    !options.expectedUpdatedAt &&
+    !options.sectionName &&
+    options.data.managementRole === undefined &&
     !options.emitBotUpdated &&
     options.data.instructions === undefined &&
     !options.instructionRestore
@@ -45,7 +54,51 @@ export async function commitBotUpdate(
   const { instructions, ...data } = options.data;
   const committed = await options.prisma.$transaction(async (tx) => {
     // Event appends also lock the thread; all writers take it before the bot row.
-    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${options.threadId} FOR UPDATE`;
+    if (options.manager) {
+      if (
+        Object.keys(data).some(
+          (key) =>
+            ![
+              "name",
+              "title",
+              "description",
+              "color",
+              "notifyOnFinish",
+              "modelProvider",
+              "modelId",
+              "thinkingLevel",
+              "pinned",
+              "sectionId",
+            ].includes(key),
+        )
+      )
+        throw new Error("Bot management cannot change roles or ownership.");
+      await lockBotManagement(tx, options.spaceId, options.manager, {
+        threadIds: [options.threadId],
+        targetBotId: options.botId,
+      });
+    } else {
+      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${options.threadId} FOR UPDATE`;
+    }
+    if (options.expectedUpdatedAt) {
+      await tx.bot.findUniqueOrThrow({
+        where: { id: options.botId, updatedAt: options.expectedUpdatedAt },
+      });
+    }
+    if (options.sectionName && options.manager) {
+      const scope = { spaceId: options.spaceId, userId: options.manager.userId };
+      const position = await tx.botSection.aggregate({ where: scope, _max: { position: true } });
+      const section = await tx.botSection.upsert({
+        where: { spaceId_userId_name: { ...scope, name: options.sectionName } },
+        create: {
+          ...scope,
+          name: options.sectionName,
+          position: (position._max.position ?? -1) + 1,
+        },
+        update: {},
+      });
+      data.sectionId = section.id;
+    }
     if (typeof instructions === "string" || options.instructionRestore) {
       await writeBotInstructions(tx, {
         botId: options.botId,
@@ -56,7 +109,10 @@ export async function commitBotUpdate(
       });
     }
     const updated = await tx.bot.update({
-      where: { id: options.botId, ...options.expectedModel },
+      where: {
+        id: options.botId,
+        ...options.expectedModel,
+      },
       data,
       select: { id: true, name: true, title: true, description: true },
     });

@@ -26,6 +26,7 @@ import {
   createRepos,
   InstructionConflictError,
   IsolationError,
+  requireBotManager,
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -60,6 +61,8 @@ export function isFleetApprovalTool(name: string): name is FleetApprovalToolName
 
 /** All scope comes from the run; no tool argument may name a space or user. */
 export type FleetRun = {
+  leaseOwner?: string | null;
+  leaseFence?: number;
   spaceId: string;
   userId: string;
   botId: string;
@@ -89,7 +92,7 @@ type Member = { id: string; name: string };
 type Refusal = { ok: false; error: string };
 
 const GROUP_SIZE_ERROR = `A group needs ${GROUP_MEMBER_MIN} to ${GROUP_MEMBER_MAX} bots.`;
-const NOT_CREATED_BY_CALLER = "You can only change bots you created. The owner edits the others.";
+const NOT_MANAGEABLE = "A Chief can only manage ordinary bots in the same space.";
 
 /**
  * Resolve everything the model could vary before the effect is recorded. The canonical request
@@ -261,7 +264,7 @@ async function prepareChildModel(
     return refuse(`Thinking level must be one of: ${ThinkingLevelSchema.options.join(", ")}`);
   }
 
-  const child = await resolveBot(deps.prisma, run, args, { createdByCaller: true });
+  const child = await resolveBot(deps.prisma, run, args, { manageableOnly: true });
   if ("error" in child) return child;
   const previous = {
     provider: child.modelProvider,
@@ -344,7 +347,7 @@ async function prepareChildRoutine(
   );
   if (!resolved.ok) return refuse(resolved.error);
 
-  const child = await resolveBot(deps.prisma, run, args, { createdByCaller: true });
+  const child = await resolveBot(deps.prisma, run, args, { manageableOnly: true });
   if ("error" in child) return child;
   if (!child.thread) return refuse("That bot has no thread.");
 
@@ -392,7 +395,7 @@ async function prepareChildInstructions(
   if (credential) return refuse(credential);
   const hidden = invisibleField({ instructions });
   if (hidden) return refuse(hidden);
-  const child = await resolveBot(deps.prisma, run, args, { createdByCaller: true });
+  const child = await resolveBot(deps.prisma, run, args, { manageableOnly: true });
   if ("error" in child) return child;
   if (!child.thread) return refuse(NOT_FOUND);
   // Checked before the card too, so a second edit never asks the owner for nothing.
@@ -441,6 +444,7 @@ type FleetBot = {
   section: string | null;
   pinned: boolean;
   createdByMe: boolean;
+  managementRole: string;
 };
 type FleetGroup = {
   id: string;
@@ -471,9 +475,13 @@ export async function listFleet(
   args: { bot_id?: unknown },
 ): Promise<FleetListing | { error: string }> {
   const { prisma } = deps;
+  const caller = await prisma.bot.findFirst({
+    where: { id: run.botId, spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+  });
+  if (!caller) return { error: NOT_FOUND };
   let detail: FleetListing["bot"];
   if (text(args.bot_id)) {
-    const child = await resolveBot(prisma, run, { bot_id: args.bot_id }, { createdByCaller: true });
+    const child = await resolveBot(prisma, run, { bot_id: args.bot_id }, { manageableOnly: true });
     if ("error" in child) return { error: child.error };
     const row = await prisma.bot.findUniqueOrThrow({
       where: { id: child.id },
@@ -494,6 +502,7 @@ export async function listFleet(
         id: true,
         name: true,
         title: true,
+        managementRole: true,
         description: true,
         pinned: true,
         section: { select: { name: true } },
@@ -501,7 +510,7 @@ export async function listFleet(
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: FLEET_BOT_LIMIT + 1,
     }),
-    visibleGroups(prisma, run),
+    caller.fleetManagement ? visibleGroups(prisma, run) : Promise.resolve([]),
     prisma.botSection.findMany({
       where: { spaceId: run.spaceId, userId: run.userId },
       select: { name: true },
@@ -529,6 +538,7 @@ export async function listFleet(
       section: bot.section ? singleLine(bot.section.name) : null,
       pinned: bot.pinned,
       createdByMe: childIds.has(bot.id),
+      managementRole: bot.managementRole,
     })),
     groups: groups.slice(0, FLEET_GROUP_LIMIT),
     sections: sections.slice(0, FLEET_SECTION_LIMIT).map((section) => singleLine(section.name)),
@@ -637,19 +647,25 @@ export async function organizeBot(
   const actor = actorOf(run);
   try {
     if (bot) {
-      const target = await resolveBot(deps.prisma, run, args, { createdByCaller: false });
+      const target = await resolveBot(deps.prisma, run, args, { manageableOnly: true });
       if ("error" in target) return { error: target.error };
       if (!target.thread) return { error: NOT_FOUND };
       // A named section is always the user's own: found or created by name in their scope.
-      if (section) {
-        await createRepos(deps.prisma).createBotSection(actor, { botId: target.id, name: section });
-      }
       await commitBotUpdate({
         prisma: deps.prisma,
         notify: (threadId, seq) => deps.events.notify(threadId, seq),
         spaceId: run.spaceId,
         threadId: target.thread.id,
         botId: target.id,
+        manager: {
+          botId: run.botId,
+          userId: run.userId,
+          runId: run.runId,
+          leaseOwner: run.leaseOwner,
+          leaseFence: run.leaseFence,
+        },
+        expectedUpdatedAt: target.updatedAt,
+        sectionName: section ?? undefined,
         emitBotUpdated: true,
         data: {
           ...(pinned !== undefined ? { pinned } : {}),
@@ -809,7 +825,7 @@ export async function updateChildBot(
     deps.prisma,
     run,
     { bot_id: args.bot_id },
-    { createdByCaller: true },
+    { manageableOnly: true },
   );
   if ("error" in child) {
     return { error: child.error };
@@ -842,6 +858,14 @@ export async function updateChildBot(
     spaceId: run.spaceId,
     threadId: child.thread.id,
     botId: child.id,
+    manager: {
+      botId: run.botId,
+      userId: run.userId,
+      runId: run.runId,
+      leaseOwner: run.leaseOwner,
+      leaseFence: run.leaseFence,
+    },
+    expectedUpdatedAt: child.updatedAt,
     emitBotUpdated: true,
     data: patch,
   });
@@ -862,7 +886,7 @@ export async function setChildInstructions(
     deps.prisma,
     run,
     { bot_id: canonical.botId },
-    { createdByCaller: true },
+    { manageableOnly: true },
   );
   if ("error" in child) return { error: child.error };
   if (!child.thread) return { error: NOT_FOUND };
@@ -885,6 +909,14 @@ export async function setChildInstructions(
       spaceId: run.spaceId,
       threadId: child.thread.id,
       botId: child.id,
+      manager: {
+        botId: run.botId,
+        userId: run.userId,
+        runId: run.runId,
+        leaseOwner: run.leaseOwner,
+        leaseFence: run.leaseFence,
+      },
+      expectedUpdatedAt: child.updatedAt,
       emitBotUpdated: true,
       data: { instructions },
       expectedInstructions: current.instructions,
@@ -931,7 +963,7 @@ export async function setChildBotModel(
     deps.prisma,
     run,
     { bot_id: canonical.botId },
-    { createdByCaller: true },
+    { manageableOnly: true },
   );
   if ("error" in child) return { error: child.error };
   if (!child.thread) return { error: NOT_FOUND };
@@ -962,6 +994,14 @@ export async function setChildBotModel(
       spaceId: run.spaceId,
       threadId: child.thread.id,
       botId: child.id,
+      manager: {
+        botId: run.botId,
+        userId: run.userId,
+        runId: run.runId,
+        leaseOwner: run.leaseOwner,
+        leaseFence: run.leaseFence,
+      },
+      expectedUpdatedAt: child.updatedAt,
       emitBotUpdated: true,
       expectedModel: {
         modelProvider: child.modelProvider,
@@ -1005,7 +1045,7 @@ export async function createChildRoutine(
     deps.prisma,
     run,
     { bot_id: canonical.botId },
-    { createdByCaller: true },
+    { manageableOnly: true },
   );
   if ("error" in child) return { error: child.error };
   if (!child.thread || child.thread.id !== canonical.threadId) return { error: NOT_FOUND };
@@ -1046,6 +1086,13 @@ export async function createChildRoutine(
     userId: run.userId,
     threadId: run.threadId,
     target: { botId: child.id, threadId: child.thread.id },
+    manager: {
+      botId: run.botId,
+      userId: run.userId,
+      runId: run.runId,
+      leaseOwner: run.leaseOwner,
+      leaseFence: run.leaseFence,
+    },
     name,
     prompt,
     timezone,
@@ -1093,6 +1140,8 @@ async function appendGroupEvent(
 
 const botSelect = {
   id: true,
+  updatedAt: true,
+  managementRole: true,
   name: true,
   modelProvider: true,
   modelId: true,
@@ -1143,17 +1192,17 @@ async function resolveBot(
   prisma: PrismaClient,
   run: FleetRun,
   args: Record<string, unknown>,
-  options: { createdByCaller: boolean },
+  options: { manageableOnly: boolean },
 ) {
   const id = text(args.bot_id);
   const name = text(args.bot_name);
   if (id && name) return refuse("Pass bot_id or bot_name, not both.");
   if (!id && !name) return refuse("Pass bot_id or bot_name.");
   const target = id ? { id } : { name };
-  const scope = options.createdByCaller
+  const scope = options.manageableOnly
     ? {
-        ...createdByWhere({ botId: run.botId, userId: run.userId, spaceId: run.spaceId }),
-        archivedAt: null,
+        ...activeBotsWhere(run),
+        managementRole: "member",
       }
     : activeBotsWhere(run);
   const bots = await prisma.bot.findMany({
@@ -1162,18 +1211,33 @@ async function resolveBot(
     take: 2,
   });
   if (bots.length > 1) {
-    return refuse(
-      `More than one bot ${options.createdByCaller ? "you created " : ""}is named "${name}". Pass bot_id instead.`,
-    );
+    return refuse(`More than one bot is named "${name}". Pass bot_id instead.`);
   }
-  if (bots[0]) return bots[0];
-  if (options.createdByCaller) {
+  if (bots[0]) {
+    if (options.manageableOnly)
+      await prisma.$transaction((tx) =>
+        requireBotManager(
+          tx,
+          run.spaceId,
+          {
+            botId: run.botId,
+            userId: run.userId,
+            runId: run.runId,
+            leaseOwner: run.leaseOwner,
+            leaseFence: run.leaseFence,
+          },
+          bots[0]!.id,
+        ),
+      );
+    return bots[0];
+  }
+  if (options.manageableOnly) {
     const other = await prisma.bot.findMany({
       where: { ...activeBotsWhere(run), ...target },
       select: { id: true },
       take: 1,
     });
-    if (other.length) return refuse(NOT_CREATED_BY_CALLER);
+    if (other.length) return refuse(NOT_MANAGEABLE);
   }
   return refuse(
     id

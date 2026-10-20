@@ -523,6 +523,10 @@ msgstr ""
 msgid "All statuses"
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "All tasks"
+msgstr ""
+
 #: src/pages/Artifacts.tsx
 msgid "All time"
 msgstr ""
@@ -847,6 +851,7 @@ msgstr "बॉट"
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Bot"
 msgstr "बॉट"
 
@@ -951,6 +956,10 @@ msgstr "नया समूह रद्द करें"
 msgid "Cancel reply"
 msgstr "उत्तर रद्द करें"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Cancel task"
+msgstr ""
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Canceled"
 msgstr ""
@@ -961,6 +970,7 @@ msgstr "रद्द"
 
 #: src/components/AskCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Cancelled"
 msgstr "रद्द किया गया"
 
@@ -1214,6 +1224,10 @@ msgstr ""
 msgid "Complete"
 msgstr "पूर्ण"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Completed"
+msgstr ""
+
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -1401,6 +1415,10 @@ msgstr "इस सर्वर को अनुमोदित नहीं क�
 #: src/pages/shell/message-cards.tsx
 msgid "Could not authorize this app"
 msgstr "इस ऐप को ऑथराइज़ नहीं किया जा सका"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Could not cancel task"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Could not change password"
@@ -1612,6 +1630,10 @@ msgstr "साइन इन के विकल्प लोड नहीं ह
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
 msgstr "स्किल लोड नहीं हो सकी"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Could not load tasks"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
@@ -2337,6 +2359,7 @@ msgid "failed"
 msgstr "असफल"
 
 #: src/pages/ActivityList.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Failed"
 msgstr "विफल"
 
@@ -2423,10 +2446,6 @@ msgstr "MCP कनेक्शन पूरा हो रहा है…"
 msgid "Flag unexpected actions"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Fleet management"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "पासवर्ड भूल गए?"
@@ -2477,6 +2496,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Group"
 msgstr "समूह"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Group management"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Group settings"
@@ -2734,10 +2757,6 @@ msgstr ""
 msgid "Leave"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
-msgstr "इस बॉट को अपने बनाए बॉट व्यवस्थित करने, समायोजित करने और शेड्यूल करने देता है। हर बदलाव को आप मंज़ूरी देते हैं।"
-
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "लाइट"
@@ -2776,6 +2795,7 @@ msgid "Load earlier messages"
 msgstr "पुराने संदेश लोड करें"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Load more"
 msgstr ""
 
@@ -3319,6 +3339,10 @@ msgstr ""
 msgid "No skills yet"
 msgstr "अभी तक कोई स्किल नहीं"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "No tasks"
+msgstr ""
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No team conversations yet."
 msgstr ""
@@ -3660,6 +3684,7 @@ msgid "Pull request"
 msgstr "पुल अनुरोध"
 
 #: src/pages/ActivityList.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Queued"
 msgstr "कतार में"
 
@@ -3768,6 +3793,7 @@ msgstr ""
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/pages/RoutineRunHistory.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Refresh"
 msgstr "रीफ़्रेश करें"
 
@@ -4013,6 +4039,10 @@ msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Robot"
+msgstr ""
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Role"
 msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
@@ -4537,6 +4567,10 @@ msgstr ""
 msgid "Subscription required"
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Subtasks"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Supports images"
@@ -4562,6 +4596,10 @@ msgstr "सिस्टम"
 #: src/pages/Shell.tsx
 msgid "Take control"
 msgstr "नियंत्रण लें"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Tasks"
+msgstr ""
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
@@ -5042,6 +5080,18 @@ msgstr "आवाज़"
 msgid "Wait a moment and test again."
 msgstr "थोड़ी देर रुकें और फिर से परीक्षण करें।"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Waiting for an answer"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Waiting for bots"
+msgstr ""
+
+#: src/lib/roster-status.ts
+msgid "Waiting for bots…"
+msgstr ""
+
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Waiting for the API to come back…"
 msgstr ""
@@ -5125,6 +5175,10 @@ msgstr "बॉट कहां चलने चाहिए?"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Working"
 msgstr ""
 
 #: src/lib/roster-status.ts

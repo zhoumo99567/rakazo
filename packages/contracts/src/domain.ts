@@ -12,6 +12,7 @@ import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 import { McpHeadersSchema, McpRemoteEndpointSchema, McpTransportSchema } from "./mcp.js";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
 import { RunTriggerSchema } from "./runs.js";
+import { BotManagementRoleSchema } from "./tasks.js";
 
 export const ComputerModeSchema = z.enum(["team", "dedicated"]);
 export type ComputerMode = z.infer<typeof ComputerModeSchema>;
@@ -106,6 +107,7 @@ export const BotSchema = z.object({
   teamChatAmbientEnabled: z.boolean(),
   teamChatRules: z.string(),
   fleetManagement: z.boolean().default(false),
+  managementRole: BotManagementRoleSchema.default("member"),
   disabledBuiltinTools: z.array(z.string()).default([]),
   webhookConfigured: z.boolean(),
   /** Present when created with an idempotency key (e.g. onboarding:first). */
@@ -223,6 +225,7 @@ export const SpaceBotSchema = BotSchema.pick({
   sectionId: true,
   unread: true,
   parentBotId: true,
+  managementRole: true,
   preview: true,
   status: true,
   runErrorId: true,
@@ -391,6 +394,7 @@ export const UpdateBotInput = z
     teamChatAmbientEnabled: z.boolean().optional(),
     teamChatRules: z.string().max(TEAM_CHAT_RULES_MAX_LENGTH).optional(),
     fleetManagement: z.boolean().optional(),
+    managementRole: BotManagementRoleSchema.optional(),
     disabledBuiltinTools: DisabledBuiltinToolsSchema.optional(),
   })
   .superRefine((value, ctx) => {

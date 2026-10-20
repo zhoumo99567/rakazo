@@ -1,5 +1,9 @@
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
-import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters";
+import {
+  ComposioConnector,
+  IntegrationProviderSettings,
+  reconcileBotArchives,
+} from "@rakazo/adapters";
 import { phoneCallSettings } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { createWorkerSecretStore } from "./secret-store.js";
@@ -271,10 +275,12 @@ async function main() {
   }
   const reconciler = createJobReconciler({
     prisma,
+    sandbox,
     jobs,
     events,
     notifications,
     leadership: createPostgresReconciliationLeadership(pool),
+    reconcileBotArchives: () => reconcileBotArchives({ prisma, sandbox, home, jobs }),
     reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
     reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
     reconcileRoutineRetryNotices: inMemoryJobs

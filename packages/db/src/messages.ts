@@ -3,15 +3,64 @@ import type { Prisma, PrismaClient } from "./client.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 /** Group turns use channel inputs and their own outputs, never private thread history. */
-export function loadRunHistoryMessages(
+export async function loadRunHistoryMessages(
   prisma: PrismaClient,
-  run: { id: string; threadId: string },
+  run: { id: string; threadId: string; sourceMessageId?: string | null },
   limit: number,
   channelId?: string,
+  taskId?: string,
+  includeConversationHistory = false,
 ) {
+  const source =
+    taskId && includeConversationHistory && run.sourceMessageId
+      ? await prisma.message.findUnique({
+          where: { id: run.sourceMessageId },
+          select: { seq: true },
+        })
+      : null;
+  const relatedRuns = taskId
+    ? await prisma.run.findMany({
+        where: {
+          threadId: run.threadId,
+          OR: [
+            { taskId },
+            ...(source
+              ? [
+                  {
+                    task: { parentTaskId: null, delegatedByRunId: null },
+                    trigger: { notIn: ["bot_message", "task_delegation"] },
+                  },
+                ]
+              : []),
+          ],
+        },
+        select: { id: true, taskId: true },
+      })
+    : [];
+  const ownRunIds = relatedRuns.filter((entry) => entry.taskId === taskId).map((entry) => entry.id);
+  const conversationRunIds = relatedRuns
+    .filter((entry) => entry.taskId !== taskId)
+    .map((entry) => entry.id);
   return prisma.message.findMany({
     where: {
       threadId: run.threadId,
+      ...(taskId
+        ? {
+            OR: [
+              { runId: { in: ownRunIds } },
+              ...(run.sourceMessageId ? [{ id: run.sourceMessageId }] : []),
+              ...(source
+                ? [
+                    {
+                      seq: { lte: source.seq },
+                      NOT: { blocks: { array_contains: [{ kind: "channel_message" }] } },
+                      OR: [{ role: "user" }, { runId: { in: conversationRunIds } }],
+                    },
+                  ]
+                : []),
+            ],
+          }
+        : {}),
       ...(channelId
         ? {
             OR: [

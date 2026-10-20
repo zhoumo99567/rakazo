@@ -1,4 +1,5 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
+import type * as DbApi from "@rakazo/db";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FleetDeps, FleetPrepareDeps, FleetRun } from "./fleet-tools.js";
@@ -13,8 +14,20 @@ import {
   updateChildBot,
 } from "./fleet-tools.js";
 
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof DbApi>()),
+  requireBotManager: vi.fn(async () => undefined),
+  lockBotManagement: vi.fn(async () => undefined),
+}));
+
+vi.mock("../../db/src/bot-management.js", () => ({
+  requireBotManager: vi.fn(async () => undefined),
+  lockBotManagement: vi.fn(async () => undefined),
+}));
+
 type FakeBot = {
   id: string;
+  managementRole?: string;
   name: string;
   spaceId?: string;
   userId?: string;
@@ -69,6 +82,7 @@ function fakeFleet(input: {
     spaceId: "space-1",
     userId: "user-1",
     parentBotId: null,
+    managementRole: "member",
     archivedAt: null,
     modelProvider: null,
     modelId: null,
@@ -84,6 +98,11 @@ function fakeFleet(input: {
   const groups = input.groups ?? [];
   const prisma = {
     bot: {
+      findFirst: vi.fn(async () => ({
+        id: run.botId,
+        managementRole: "chief",
+        fleetManagement: true,
+      })),
       findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
         bots.filter((bot) =>
           Object.entries(where).every(([key, condition]) =>
@@ -153,6 +172,7 @@ function fakeFleet(input: {
       defaultModel: async () => ({ provider: null, model: null }),
     },
   };
+  prisma.$transaction.mockImplementation(async (work) => work(prisma));
   return { deps, bots, prisma };
 }
 
@@ -180,7 +200,7 @@ const fleet = {
       modelId: "claude-old",
     },
     { id: "bot-writer", name: "Writer", parentBotId: "bot-self" },
-    { id: "bot-ops", name: "Ops" },
+    { id: "bot-ops", name: "Ops", managementRole: "chief" },
     { id: "bot-twin-1", name: "Twin" },
     { id: "bot-twin-2", name: "Twin" },
     { id: "bot-ghost", name: "Ghost", parentBotId: "bot-self", archivedAt: new Date(0) },
@@ -324,13 +344,13 @@ describe("prepareFleetRequest update_group", () => {
 });
 
 describe("prepareFleetRequest set_child_bot_model", () => {
-  it("refuses a bot the caller did not create", async () => {
+  it("refuses another Chief", async () => {
     const { deps } = fakeFleet(fleet);
     expect(
       await prepareFleetRequest(deps, run, "set_child_bot_model", { bot_name: "Ops", clear: true }),
     ).toEqual({
       ok: false,
-      error: "You can only change bots you created. The owner edits the others.",
+      error: "A Chief can only manage ordinary bots in the same space.",
     });
     expect(
       await prepareFleetRequest(deps, run, "set_child_bot_model", {
@@ -575,7 +595,7 @@ describe("prepareFleetRequest create_child_routine", () => {
     });
   });
 
-  it("refuses a bot the caller did not create", async () => {
+  it("refuses another Chief", async () => {
     const { deps } = fakeFleet(fleet);
     expect(
       await prepareFleetRequest(deps, run, "create_child_routine", {
@@ -586,7 +606,7 @@ describe("prepareFleetRequest create_child_routine", () => {
       }),
     ).toEqual({
       ok: false,
-      error: "You can only change bots you created. The owner edits the others.",
+      error: "A Chief can only manage ordinary bots in the same space.",
     });
   });
 });
@@ -921,6 +941,7 @@ describe("listFleet", () => {
           section: null,
           pinned: false,
           createdByMe: false,
+          managementRole: "member",
         },
         {
           id: "bot-scout",
@@ -930,6 +951,7 @@ describe("listFleet", () => {
           section: "Research",
           pinned: true,
           createdByMe: true,
+          managementRole: "member",
         },
         expect.objectContaining({ id: "bot-writer", createdByMe: true }),
         expect.objectContaining({ id: "bot-ops", createdByMe: false }),
@@ -953,7 +975,7 @@ describe("listFleet", () => {
     });
   });
 
-  it("returns a child's instructions and version, and refuses any other bot", async () => {
+  it("returns a member's instructions and version, and refuses another Chief", async () => {
     const { deps } = fakeFleet({
       bots: [
         { id: "bot-self", name: "Designer" },
@@ -965,7 +987,7 @@ describe("listFleet", () => {
           instructionHistory: [{ id: "version-2" }, { id: "version-1" }],
         },
         { id: "bot-fresh", name: "Fresh", parentBotId: "bot-self", instructions: "Start." },
-        { id: "bot-peer", name: "Peer", instructions: "Secret plan." },
+        { id: "bot-peer", managementRole: "chief", name: "Peer", instructions: "Secret plan." },
       ],
     });
     expect(await listFleet(deps, run, { bot_id: "bot-child" })).toMatchObject({
@@ -975,7 +997,7 @@ describe("listFleet", () => {
       bot: { id: "bot-fresh", instructions: "Start.", instructionsVersion: "initial" },
     });
     expect(await listFleet(deps, run, { bot_id: "bot-peer" })).toEqual({
-      error: "You can only change bots you created. The owner edits the others.",
+      error: "A Chief can only manage ordinary bots in the same space.",
     });
     expect(JSON.stringify(await listFleet(deps, run, {}))).not.toContain("Secret plan.");
   });
@@ -1089,7 +1111,7 @@ describe("organizeBot refusals", () => {
     ).toEqual({
       error: "That bot or group is no longer available. Call list_fleet and try again.",
     });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 
   it("refuses section together with clear_section", async () => {
@@ -1128,14 +1150,18 @@ describe("updateChildBot", () => {
     instructions: "Research venues.",
     instructionHistory: [{ id: "version-2" }],
   };
-  const bots = [{ id: "bot-self", name: "Designer" }, child, { id: "bot-ops", name: "Ops" }];
+  const bots = [
+    { id: "bot-self", name: "Designer" },
+    child,
+    { id: "bot-ops", name: "Ops", managementRole: "chief" },
+  ];
 
-  it("refuses a bot the caller did not create and changes nothing", async () => {
+  it("refuses another Chief and changes nothing", async () => {
     const { prisma } = fakeFleet({ bots });
     expect(
       await updateChildBot(writeDeps(prisma), run, { bot_id: "bot-ops", name: "Mine now" }),
-    ).toEqual({ error: "You can only change bots you created. The owner edits the others." });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    ).toEqual({ error: "A Chief can only manage ordinary bots in the same space." });
+    expect(prisma.bot.update).not.toHaveBeenCalled();
     expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 
@@ -1150,7 +1176,7 @@ describe("updateChildBot", () => {
     ).toEqual({
       error: "Provide at least one of name, title, description, notify_on_finish, or color.",
     });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 
   it.each(["name", "title", "description"])(
@@ -1163,7 +1189,7 @@ describe("updateChildBot", () => {
           [field]: "Uses sk-test-not-a-real-key",
         }),
       ).toEqual({ error: `${field} cannot contain credentials.` });
-      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.bot.update).not.toHaveBeenCalled();
     },
   );
 
@@ -1208,7 +1234,7 @@ describe("updateChildBot", () => {
     expect(
       await updateChildBot(writeDeps(prisma), run, { bot_id: "bot-child", color: "red" }),
     ).toMatchObject({ error: expect.stringMatching(/^color must be/) });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 });
 
@@ -1220,7 +1246,11 @@ describe("prepareFleetRequest set_child_instructions", () => {
     instructions: "Research venues.",
     instructionHistory: [{ id: "version-2" }],
   };
-  const bots = [{ id: "bot-self", name: "Designer" }, child, { id: "bot-ops", name: "Ops" }];
+  const bots = [
+    { id: "bot-self", name: "Designer" },
+    child,
+    { id: "bot-ops", name: "Ops", managementRole: "chief" },
+  ];
   const edit = {
     bot_id: "bot-child",
     instructions: "Plan the offsite.",
@@ -1304,7 +1334,7 @@ describe("prepareFleetRequest set_child_instructions", () => {
     ).toEqual({ ok: false, error: "instructions must be at most 20000 characters." });
   });
 
-  it("refuses a bot the caller did not create", async () => {
+  it("refuses another Chief", async () => {
     const { deps } = fakeFleet({ bots });
     expect(
       await prepareFleetRequest(deps, run, "set_child_instructions", {
@@ -1313,7 +1343,7 @@ describe("prepareFleetRequest set_child_instructions", () => {
       }),
     ).toEqual({
       ok: false,
-      error: "You can only change bots you created. The owner edits the others.",
+      error: "A Chief can only manage ordinary bots in the same space.",
     });
   });
 
@@ -1356,7 +1386,7 @@ describe("setChildInstructions", () => {
     expect(await setChildInstructions(writeDeps(prisma), run, canonical)).toEqual({
       error: "child changed; read it again with list_fleet",
     });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 
   it("checks ownership again at execution", async () => {
@@ -1369,7 +1399,7 @@ describe("setChildInstructions", () => {
     expect(await setChildInstructions(writeDeps(prisma), run, canonical)).toEqual({
       error: 'No bot with id "bot-child". Call list_fleet for ids.',
     });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 
   it("keeps one instruction write per child per run", async () => {
@@ -1380,7 +1410,7 @@ describe("setChildInstructions", () => {
     expect(await setChildInstructions(writeDeps(prisma), run, canonical)).toEqual({
       error: "You already changed this bot's instructions in this run.",
     });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 });
 
@@ -1405,7 +1435,7 @@ describe("setChildBotModel", () => {
       canonical,
     );
     expect(result).toEqual({ error: 'No bot with id "bot-scout". Call list_fleet for ids.' });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 
   it("refuses when the owner changed the model while the card waited", async () => {
@@ -1420,7 +1450,7 @@ describe("setChildBotModel", () => {
       canonical,
     );
     expect(result).toEqual({ error: "That bot's model changed since you approved; ask again." });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 
   it("refuses a thinking-only edit made while the approval waited", async () => {
@@ -1432,7 +1462,7 @@ describe("setChildBotModel", () => {
     expect(
       await setChildBotModel({ ...deps, events: writeDeps(prisma).events }, run, canonical),
     ).toEqual({ error: "That bot's model changed since you approved; ask again." });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 
   it("requires all three original model values in the atomic write", async () => {
@@ -1467,7 +1497,7 @@ describe("setChildBotModel", () => {
       canonical,
     );
     expect(result).toEqual({ error: "Connect that model provider first" });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 });
 
@@ -1543,14 +1573,14 @@ describe("createChildRoutine", () => {
     );
   });
 
-  it("refuses a bot that is no longer the caller's child", async () => {
+  it("refuses a bot promoted to Chief", async () => {
     const { prisma } = fakeFleet({
       bots: fleet.bots.map((bot) =>
-        bot.id === "bot-writer" ? { ...bot, parentBotId: null } : bot,
+        bot.id === "bot-writer" ? { ...bot, managementRole: "chief" } : bot,
       ),
     });
     expect(await createChildRoutine(writeDeps(prisma), run, canonical)).toEqual({
-      error: "You can only change bots you created. The owner edits the others.",
+      error: "A Chief can only manage ordinary bots in the same space.",
     });
     expect(prisma.routine.create).not.toHaveBeenCalled();
   });

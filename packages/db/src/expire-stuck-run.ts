@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { TASK_PROTOCOL } from "@rakazo/contracts";
 import type { StuckWorkStatus } from "@rakazo/core";
 import { ACTIVE_RUN_STATUSES, stuckWorkExpiredNonce, stuckWorkStatusMessage } from "@rakazo/core";
 import type { Prisma } from "./client.js";
@@ -9,6 +10,7 @@ import {
   discardAnsweredSteering,
 } from "./events.js";
 import { createThreadMessageInTransaction } from "./messages.js";
+import { cancelCoordinatedTask, lockTaskTree } from "./task-coordination.js";
 
 export interface ExpireStuckRunInput {
   runId: string;
@@ -36,7 +38,7 @@ export async function expireStuckRun(
   await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
   const current = await tx.run.findUnique({
     where: { id: input.runId },
-    select: { status: true, updatedAt: true },
+    select: { status: true, updatedAt: true, taskId: true },
   });
   // Re-read so the fence uses the same timestamp precision Prisma just loaded.
   if (
@@ -46,43 +48,63 @@ export async function expireStuckRun(
   ) {
     return null;
   }
-  const cancelled = await tx.run.updateMany({
-    where: { id: input.runId, status: input.status, updatedAt: current.updatedAt },
-    data: {
-      status: "cancelled",
-      error: stuckWorkStatusMessage(input.status),
-      completedAt: input.now,
-      leaseOwner: null,
-      leaseExpiresAt: null,
-    },
-  });
-  if (cancelled.count !== 1) return null;
-
-  await tx.attempt.updateMany({
-    where: {
-      runId: input.runId,
-      status: { in: ["running", "waiting_input", "waiting_takeover"] },
-    },
-    data: { status: "cancelled", finishedAt: input.now },
-  });
-
+  const task = await lockTaskTree(tx, current.taskId);
+  const coordinated = task?.protocol === TASK_PROTOCOL;
+  if (coordinated) {
+    await tx.$queryRaw`SELECT id FROM runs WHERE id = ${input.runId} FOR UPDATE`;
+    // A sibling completion can change this task while we wait for its tree lock.
+    const fresh = await tx.run.findUnique({ where: { id: input.runId } });
+    if (
+      !fresh ||
+      fresh.status !== input.status ||
+      fresh.updatedAt.getTime() !== input.updatedAt.getTime()
+    )
+      return null;
+    // Snapshot leases while the run is still live. The durable cleanup worker
+    // releases them only after stopping the physical work.
+    await cancelCoordinatedTask(tx, current.taskId, stuckWorkStatusMessage(input.status));
+    await tx.run.updateMany({
+      where: { id: input.runId, status: "cancelled" },
+      data: { error: stuckWorkStatusMessage(input.status), completedAt: input.now },
+    });
+  } else {
+    const cancelled = await tx.run.updateMany({
+      where: { id: input.runId, status: input.status, updatedAt: current.updatedAt },
+      data: {
+        status: "cancelled",
+        error: stuckWorkStatusMessage(input.status),
+        completedAt: input.now,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      },
+    });
+    if (cancelled.count !== 1) return null;
+    await tx.attempt.updateMany({
+      where: {
+        runId: input.runId,
+        status: { in: ["running", "waiting_input", "waiting_takeover"] },
+      },
+      data: { status: "cancelled", finishedAt: input.now },
+    });
+  }
   const run = await tx.run.findUniqueOrThrow({
     where: { id: input.runId },
     select: { spaceId: true, threadId: true, botId: true, taskId: true },
   });
-  const sibling = await tx.run.findFirst({
-    where: {
-      taskId: run.taskId,
-      id: { not: input.runId },
-      status: { in: [...ACTIVE_RUN_STATUSES] },
-    },
-    select: { id: true },
-  });
-  if (!sibling) {
-    await tx.task.updateMany({
-      where: { id: run.taskId },
-      data: { status: "cancelled" },
+  if (!coordinated) {
+    const sibling = await tx.run.findFirst({
+      where: {
+        taskId: run.taskId,
+        id: { not: input.runId },
+        status: { in: [...ACTIVE_RUN_STATUSES] },
+      },
+      select: { id: true },
     });
+    if (!sibling)
+      await tx.task.updateMany({
+        where: { id: run.taskId },
+        data: { status: "cancelled" },
+      });
   }
 
   const text = stuckWorkStatusMessage(input.status);
@@ -111,24 +133,26 @@ export async function expireStuckRun(
     payload: {},
   });
   await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
-  await expireComputerExecutionLeases(tx, { runId: input.runId });
-  // A user lease still on this row is on the screen until release or revocation.
-  // Dropping controlRunId first makes maintenance treat the takeover as idle.
-  await tx.computer.updateMany({
-    where: {
-      controlRunId: input.runId,
-      OR: [{ controlHolder: { not: "user" } }, { controlLeaseId: null }],
-    },
-    data: { controlRunId: null },
-  });
-  await tx.computer.updateMany({
-    where: { executionRunId: input.runId },
-    data: {
-      executionRunId: null,
-      executionBotId: null,
-      executionLeaseExpiresAt: null,
-    },
-  });
+  if (!coordinated) {
+    await expireComputerExecutionLeases(tx, { runId: input.runId });
+    // A user lease still on this row is on the screen until release or revocation.
+    // Dropping controlRunId first makes maintenance treat the takeover as idle.
+    await tx.computer.updateMany({
+      where: {
+        controlRunId: input.runId,
+        OR: [{ controlHolder: { not: "user" } }, { controlLeaseId: null }],
+      },
+      data: { controlRunId: null },
+    });
+    await tx.computer.updateMany({
+      where: { executionRunId: input.runId },
+      data: {
+        executionRunId: null,
+        executionBotId: null,
+        executionLeaseExpiresAt: null,
+      },
+    });
+  }
   await discardAnsweredSteering(tx, { threadId: run.threadId, runId: input.runId });
   await tx.steeringMessage.updateMany({
     where: { runId: input.runId },

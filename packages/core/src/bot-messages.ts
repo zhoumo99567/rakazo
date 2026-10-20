@@ -29,6 +29,7 @@ export interface BotAddress {
   name: string;
   title?: string;
   description?: string;
+  managementRole?: string;
 }
 
 export function clampBotMessage(text: string): string {
@@ -96,7 +97,7 @@ export function formatBotRosterLines(bots: readonly BotAddress[]): string[] {
         description = escaped;
       }
     }
-    return `- ${name} (id: ${bot.id})${title ? ` — ${title}` : ""}${description ? `: ${description}` : ""}`;
+    return `- ${name} (id: ${bot.id}${bot.managementRole ? `, role: ${bot.managementRole === "chief" ? "Chief" : "Bot"}` : ""})${title ? ` — ${title}` : ""}${description ? `: ${description}` : ""}`;
   });
 }
 

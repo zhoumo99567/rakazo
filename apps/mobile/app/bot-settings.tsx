@@ -28,7 +28,6 @@ import { NativeActionButton } from "../components/native-action-button";
 import { NativeSwitch } from "../components/native-switch";
 import { NativeSymbol } from "../components/native-symbol";
 import { Chevron } from "../components/row-accessories";
-import { SettingsFooter } from "../components/settings-group";
 import type { MobileBot, MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
 import { rpc } from "../lib/api";
 import {
@@ -66,6 +65,7 @@ export default function BotSettingsScreen() {
   const [modelKey, setModelKey] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState("");
   const [autoSpeak, setAutoSpeak] = useState(false);
+  const [managementRole, setManagementRole] = useState<"member" | "chief">("member");
   const [fleetManagement, setFleetManagement] = useState(false);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
@@ -100,6 +100,7 @@ export default function BotSettingsScreen() {
         setThinkingLevel(next.thinkingLevel ?? "");
         setAutoSpeak(next.autoSpeak);
         setFleetManagement(next.fleetManagement);
+        setManagementRole(next.managementRole ?? "member");
       })
       .catch((err) => setError(errorText(err, t("Could not load bot"))));
   }, [botId]);
@@ -550,12 +551,38 @@ export default function BotSettingsScreen() {
             value={autoSpeak}
           />
         </View>
+        <NativeActionButton
+          label={t("Tasks")}
+          prominence="plain"
+          onPress={() => router.push({ pathname: "/bot-tasks", params: { botId } })}
+        />
+        <MenuPicker
+          label={t("Role")}
+          choices={[
+            { key: "member", label: t("Bot") },
+            { key: "chief", label: "Chief" },
+          ]}
+          value={managementRole}
+          onChange={(key) => {
+            if (!botId || pending) return;
+            const next = key === "chief" ? "chief" : "member";
+            const previous = managementRole;
+            setManagementRole(next);
+            setPending(true);
+            void rpc("bots/update", { botId, managementRole: next })
+              .catch((err) => {
+                setManagementRole(previous);
+                setError(errorText(err, t("Could not save bot")));
+              })
+              .finally(() => setPending(false));
+          }}
+        />
         <View style={[styles.row, { marginTop: 20 }]}>
           <Text style={[styles.rowLabel, { color: tokens.mutedForeground }]}>
-            {t("Fleet management")}
+            {t("Group management")}
           </Text>
           <NativeSwitch
-            accessibilityLabel={t("Fleet management")}
+            accessibilityLabel={t("Group management")}
             disabled={pending}
             onValueChange={(value) => {
               if (!botId || pending) return;
@@ -571,11 +598,6 @@ export default function BotSettingsScreen() {
             value={fleetManagement}
           />
         </View>
-        <SettingsFooter>
-          {t(
-            "Lets this bot organize, retune and schedule the bots it creates. You approve each change.",
-          )}
-        </SettingsFooter>
         {deviceVoiceEnabled ? (
           voiceError ? (
             <Pressable

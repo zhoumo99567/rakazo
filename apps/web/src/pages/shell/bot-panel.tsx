@@ -41,6 +41,7 @@ import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { AvatarStudioPopover } from "./avatar-studio-popover";
 import { BotCredentialsSection } from "./bot-credentials";
+import { BotTasks } from "./bot-tasks";
 
 const ScratchpadSection = lazy(() =>
   import("../ScratchpadSection").then((module) => ({ default: module.ScratchpadSection })),
@@ -221,6 +222,7 @@ export function BotSettings({
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
     fleetManagement?: boolean;
+    managementRole?: "member" | "chief";
     voiceId?: string | null;
     modelProvider?: string | null;
     modelId?: string | null;
@@ -246,6 +248,8 @@ export function BotSettings({
   const [computerMode, setComputerMode] = useState(bot.computerMode);
   const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
+  const [managementRole, setManagementRole] = useState(bot.managementRole ?? "member");
+  useEffect(() => setManagementRole(bot.managementRole ?? "member"), [bot.managementRole]);
   const [fleetManagement, setFleetManagement] = useState(bot.fleetManagement);
   useEffect(() => setFleetManagement(bot.fleetManagement), [bot.fleetManagement]);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
@@ -285,6 +289,7 @@ export function BotSettings({
       color?: string;
       notifyOnFinish?: boolean;
       fleetManagement?: boolean;
+      managementRole?: "member" | "chief";
       disabledBuiltinTools?: string[];
       baseDisabledBuiltinTools?: string[];
     }) => Promise<void>
@@ -343,12 +348,17 @@ export function BotSettings({
     color?: string;
     notifyOnFinish?: boolean;
     fleetManagement?: boolean;
+    managementRole?: "member" | "chief";
     disabledBuiltinTools?: string[];
     baseDisabledBuiltinTools?: string[];
   }) {
     try {
       setSaving(true);
       setError(null);
+      if (patchOverrides?.managementRole !== undefined) {
+        await onSave({ managementRole: patchOverrides.managementRole });
+        return;
+      }
       if (patchOverrides?.fleetManagement !== undefined) {
         await onSave({ fleetManagement: patchOverrides.fleetManagement });
         return;
@@ -427,6 +437,8 @@ export function BotSettings({
       }
       savedDescriptionRef.current = nextDescription;
     } catch (err) {
+      if (patchOverrides?.managementRole !== undefined)
+        setManagementRole(bot.managementRole ?? "member");
       if (patchOverrides?.fleetManagement !== undefined)
         setFleetManagement(!patchOverrides.fleetManagement);
       setError(errorText(err, t`Could not save`));
@@ -462,6 +474,7 @@ export function BotSettings({
     color?: string;
     notifyOnFinish?: boolean;
     fleetManagement?: boolean;
+    managementRole?: "member" | "chief";
     disabledBuiltinTools?: string[];
   }) {
     // Serialize full-object auto-saves so an older in-flight request cannot
@@ -568,6 +581,7 @@ export function BotSettings({
             ›
           </span>
         </summary>
+        <BotTasks key={`tasks-${bot.id}`} botId={bot.id} />
         <InstructionSettings key={bot.id} bot={bot} />
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
         <ErrorBoundary fallback={<SectionLoadFailed />}>
@@ -670,6 +684,25 @@ export function BotSettings({
           />
           <Trans>Read replies aloud</Trans>
         </label>
+        <label htmlFor={`${ids}-management-role`} className={fieldLabelClass}>
+          <Trans>Role</Trans>
+          <NativeSelect
+            id={`${ids}-management-role`}
+            className="mt-2 w-full"
+            value={managementRole}
+            disabled={saving}
+            onChange={(event) => {
+              const role = event.target.value === "chief" ? "chief" : "member";
+              setManagementRole(role);
+              void enqueueSave({ managementRole: role });
+            }}
+          >
+            <option value="member">
+              <Trans>Bot</Trans>
+            </option>
+            <option value="chief">Chief</option>
+          </NativeSelect>
+        </label>
         <label
           htmlFor={`${ids}-fleet-management`}
           className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-foreground/75"
@@ -683,14 +716,8 @@ export function BotSettings({
               void enqueueSave({ fleetManagement: checked });
             }}
           />
-          <Trans>Fleet management</Trans>
+          <Trans>Group management</Trans>
         </label>
-        <div className="text-[12px] text-muted-foreground/70">
-          <Trans>
-            Lets this bot organize, retune and schedule the bots it creates. You approve each
-            change.
-          </Trans>
-        </div>
         {voices.length ? (
           <label htmlFor={`${ids}-voice`} className={fieldLabelClass}>
             <Trans>Voice</Trans>

@@ -1741,7 +1741,9 @@ describe("computer terminal and file transfer", () => {
       where: { id: "computer-1", providerRef: "sandbox-ref-1" },
       data: { state: "stopped", providerRef: null },
     });
-    expect(findUniqueOrThrow).toHaveBeenCalledWith({ where: { id: "computer-1" } });
+    expect(findUniqueOrThrow).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "computer-1" } }),
+    );
   });
 
   it("does not discard a live sandbox when folder preparation fails", async () => {
@@ -3563,6 +3565,7 @@ describe("bot model auth on save", () => {
       sectionId: null,
       archivedAt: null,
       parentBotId: null,
+      tasks: [],
       memoryScope: null,
       createdAt: now,
       updatedAt: now,
@@ -3816,8 +3819,8 @@ describe("bot restore computer quota", () => {
     const { response } = await call();
     expect(response.status).toBe(200);
     expect(prisma.bot.update).toHaveBeenCalledWith({
-      where: { id: "bot-archived" },
-      data: { archivedAt: null },
+      where: { id: "bot-archived", archiveCleanupPending: false },
+      data: { archivedAt: null, archiveOperationKey: null },
     });
   });
 
@@ -4143,6 +4146,7 @@ describe("openai-compatible enabled models", () => {
       sectionId: null,
       archivedAt: null,
       parentBotId: null,
+      tasks: [],
       memoryScope: null,
       createdAt: now,
       updatedAt: now,
@@ -5169,7 +5173,7 @@ describe("groups.archive", () => {
         updateMany: vi.fn(),
       },
       attempt: { updateMany: vi.fn() },
-      task: { updateMany: vi.fn() },
+      task: { findMany: vi.fn(async () => []), updateMany: vi.fn() },
       computerExecutionLease: {
         findMany: vi
           .fn()

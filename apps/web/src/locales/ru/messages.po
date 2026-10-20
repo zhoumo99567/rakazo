@@ -523,6 +523,10 @@ msgstr ""
 msgid "All statuses"
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "All tasks"
+msgstr ""
+
 #: src/pages/Artifacts.tsx
 msgid "All time"
 msgstr ""
@@ -847,6 +851,7 @@ msgstr "бот"
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Bot"
 msgstr "Бот"
 
@@ -951,6 +956,10 @@ msgstr "Отменить создание группы"
 msgid "Cancel reply"
 msgstr "Отменить ответ"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Cancel task"
+msgstr ""
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Canceled"
 msgstr ""
@@ -961,6 +970,7 @@ msgstr "отменен"
 
 #: src/components/AskCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Cancelled"
 msgstr "Отменено"
 
@@ -1214,6 +1224,10 @@ msgstr ""
 msgid "Complete"
 msgstr "Завершить"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Completed"
+msgstr ""
+
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -1401,6 +1415,10 @@ msgstr "Не удалось одобрить этот сервер"
 #: src/pages/shell/message-cards.tsx
 msgid "Could not authorize this app"
 msgstr "Не удалось авторизовать это приложение"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Could not cancel task"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Could not change password"
@@ -1612,6 +1630,10 @@ msgstr "Не удалось загрузить способы входа"
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
 msgstr "Не удалось загрузить навык"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Could not load tasks"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
@@ -2337,6 +2359,7 @@ msgid "failed"
 msgstr "неуспешный"
 
 #: src/pages/ActivityList.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Failed"
 msgstr "Ошибка"
 
@@ -2423,10 +2446,6 @@ msgstr "Завершение подключения MCP…"
 msgid "Flag unexpected actions"
 msgstr "Пометить неожиданные действия"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Fleet management"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "Забыли пароль?"
@@ -2477,6 +2496,10 @@ msgstr "Git-событие"
 #: src/pages/Shell.tsx
 msgid "Group"
 msgstr "Группа"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Group management"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Group settings"
@@ -2734,10 +2757,6 @@ msgstr "Позже"
 msgid "Leave"
 msgstr "Выйти"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
-msgstr "Позволяет этому боту организовывать, настраивать и планировать работу созданных им ботов. Вы одобряете каждое изменение."
-
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "Светлая"
@@ -2776,6 +2795,7 @@ msgid "Load earlier messages"
 msgstr "Загрузить более ранние сообщения"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Load more"
 msgstr ""
 
@@ -3319,6 +3339,10 @@ msgstr "Запусков пока нет"
 msgid "No skills yet"
 msgstr "Навыков пока нет"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "No tasks"
+msgstr ""
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No team conversations yet."
 msgstr "Командных диалогов пока нет."
@@ -3660,6 +3684,7 @@ msgid "Pull request"
 msgstr "Запрос на слияние"
 
 #: src/pages/ActivityList.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Queued"
 msgstr "В очереди"
 
@@ -3768,6 +3793,7 @@ msgstr "Повторное создание компьютера"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/pages/RoutineRunHistory.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Refresh"
 msgstr "Обновить"
 
@@ -4014,6 +4040,10 @@ msgstr "Отозвать"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Robot"
 msgstr "Робот"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Role"
+msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Room guidance"
@@ -4537,6 +4567,10 @@ msgstr ""
 msgid "Subscription required"
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Subtasks"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Supports images"
@@ -4562,6 +4596,10 @@ msgstr "Системная"
 #: src/pages/Shell.tsx
 msgid "Take control"
 msgstr "Взять управление"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Tasks"
+msgstr ""
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
@@ -5042,6 +5080,18 @@ msgstr "Голос"
 msgid "Wait a moment and test again."
 msgstr "Подождите немного и повторите тест."
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Waiting for an answer"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Waiting for bots"
+msgstr ""
+
+#: src/lib/roster-status.ts
+msgid "Waiting for bots…"
+msgstr ""
+
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Waiting for the API to come back…"
 msgstr "Ждём возвращения API…"
@@ -5125,6 +5175,10 @@ msgstr "Где должны работать боты?"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Working"
 msgstr ""
 
 #: src/lib/roster-status.ts

@@ -31,6 +31,7 @@ const baseBot = {
   updatedAt: new Date("2026-08-19T00:00:00.000Z"),
   thread: { id: "thread-1", unread: false, messages: [], runs: [] },
   runs: [],
+  tasks: [],
   computer: null,
 };
 
@@ -370,6 +371,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
     const findMany = vi.fn(async (_query: { where: unknown; select: Record<string, unknown> }) => [
       {
         id: "bot-2",
+        managementRole: "member",
         spaceId: "ws-2",
         name: "Support",
         title: "Customer support",
@@ -397,6 +399,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
     await expect(repos.listSpaceBotsForSpaces(actor, ["ws-2"])).resolves.toEqual([
       {
         id: "bot-2",
+        managementRole: "member",
         spaceId: "ws-2",
         name: "Support",
         title: "Customer support",

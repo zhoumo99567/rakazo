@@ -523,6 +523,10 @@ msgstr ""
 msgid "All statuses"
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "All tasks"
+msgstr ""
+
 #: src/pages/Artifacts.tsx
 msgid "All time"
 msgstr "Toute la période"
@@ -847,6 +851,7 @@ msgstr "bot"
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Bot"
 msgstr "Bot"
 
@@ -951,6 +956,10 @@ msgstr "Annuler le nouveau groupe"
 msgid "Cancel reply"
 msgstr "Annuler la réponse"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Cancel task"
+msgstr ""
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Canceled"
 msgstr ""
@@ -961,6 +970,7 @@ msgstr "annulé"
 
 #: src/components/AskCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Cancelled"
 msgstr "Annulé"
 
@@ -1214,6 +1224,10 @@ msgstr ""
 msgid "Complete"
 msgstr "Terminé"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Completed"
+msgstr ""
+
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -1401,6 +1415,10 @@ msgstr "Impossible d'approuver ce serveur"
 #: src/pages/shell/message-cards.tsx
 msgid "Could not authorize this app"
 msgstr "Impossible d'autoriser cette application"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Could not cancel task"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Could not change password"
@@ -1612,6 +1630,10 @@ msgstr "Impossible de charger les options de connexion"
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
 msgstr "Impossible de charger la compétence"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Could not load tasks"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
@@ -2337,6 +2359,7 @@ msgid "failed"
 msgstr "échoué"
 
 #: src/pages/ActivityList.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Failed"
 msgstr "Échoué"
 
@@ -2423,10 +2446,6 @@ msgstr "Finalisation de la connexion MCP…"
 msgid "Flag unexpected actions"
 msgstr "Signaler les actions inattendues"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Fleet management"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "Mot de passe oublié ?"
@@ -2477,6 +2496,10 @@ msgstr "Événement Git"
 #: src/pages/Shell.tsx
 msgid "Group"
 msgstr "Groupe"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Group management"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Group settings"
@@ -2734,10 +2757,6 @@ msgstr "Plus tard"
 msgid "Leave"
 msgstr "Quitter"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
-msgstr "Permet à ce bot d’organiser, d’ajuster et de planifier les bots qu’il crée. Vous approuvez chaque modification."
-
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "Clair"
@@ -2776,6 +2795,7 @@ msgid "Load earlier messages"
 msgstr "Charger les messages précédents"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Load more"
 msgstr "Charger plus"
 
@@ -3319,6 +3339,10 @@ msgstr "Aucune exécution pour le moment"
 msgid "No skills yet"
 msgstr "Aucune compétence pour le moment"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "No tasks"
+msgstr ""
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No team conversations yet."
 msgstr "Aucune conversation d'équipe pour le moment."
@@ -3660,6 +3684,7 @@ msgid "Pull request"
 msgstr "Demande de fusion"
 
 #: src/pages/ActivityList.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Queued"
 msgstr "En file d'attente"
 
@@ -3768,6 +3793,7 @@ msgstr "Recréation de l'ordinateur"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/pages/RoutineRunHistory.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Refresh"
 msgstr "Actualiser"
 
@@ -4014,6 +4040,10 @@ msgstr "Révoquer"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Robot"
 msgstr "Robot"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Role"
+msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Room guidance"
@@ -4537,6 +4567,10 @@ msgstr ""
 msgid "Subscription required"
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Subtasks"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Supports images"
@@ -4562,6 +4596,10 @@ msgstr "Système"
 #: src/pages/Shell.tsx
 msgid "Take control"
 msgstr "Prendre le contrôle"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Tasks"
+msgstr ""
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
@@ -5042,6 +5080,18 @@ msgstr "Voix"
 msgid "Wait a moment and test again."
 msgstr "Patientez un instant et testez à nouveau."
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Waiting for an answer"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Waiting for bots"
+msgstr ""
+
+#: src/lib/roster-status.ts
+msgid "Waiting for bots…"
+msgstr ""
+
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Waiting for the API to come back…"
 msgstr "En attente du retour de l'API…"
@@ -5125,6 +5175,10 @@ msgstr "Où les bots doivent-ils s'exécuter ?"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Working"
 msgstr ""
 
 #: src/lib/roster-status.ts

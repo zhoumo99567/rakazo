@@ -200,7 +200,7 @@ function fixture({
     pendingInstructionsRunId,
     selfUpdateInstructions,
   };
-  const liveBot = { fleetManagement };
+  const liveBot = { fleetManagement, managementRole: fleetManagement ? "chief" : "member" };
   let outsideSteering = false;
   let offeredTools: string[] = [];
   const prisma = {
@@ -225,6 +225,7 @@ function fixture({
         description: bot.description,
         disabledBuiltinTools,
         fleetManagement,
+        managementRole: fleetManagement ? "chief" : "member",
         computerId: "computer-1",
         computer: { id: "computer-1", scope: "dedicated" },
       })),
@@ -246,6 +247,7 @@ function fixture({
           (row) => matches(row.id, where.id) && matches(row.name, where.name),
         );
       }),
+      findFirst: vi.fn(async () => ({ ...liveBot })),
       findUnique: vi.fn(async () => ({ ...liveBot })),
     },
     attempt: {
@@ -273,7 +275,10 @@ function fixture({
         ...data,
       })),
     },
-    task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: taskPrompt })) },
+    task: {
+      findUnique: vi.fn(async () => ({ protocol: "legacy" })),
+      findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: taskPrompt })),
+    },
     connection: { findMany: vi.fn(async () => []) },
     spaceModelPreference: { findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
@@ -423,13 +428,18 @@ function fixture({
       };
       const tx = {
         $queryRaw: vi.fn(async () => []),
-        thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })) },
+        thread: {
+          findUnique: vi.fn(async () => ({ groupId: null })),
+          update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })),
+        },
         message: {
+          updateMany: vi.fn(async () => ({ count: 1 })),
           create: vi.fn(async () => inboundMessage),
           update: vi.fn(async () => inboundMessage),
         },
         event: { create: vi.fn(async ({ data }: { data: object }) => ({ ...data, seq: 1 })) },
         task: {
+          updateMany: vi.fn(async () => ({ count: 1 })),
           create: vi.fn(async ({ data }: { data: { prompt: string } }) => {
             taskPrompt = data.prompt;
             return { id: "task-1" };
@@ -1077,6 +1087,7 @@ describe("fleet tool gating", () => {
   it("re-reads the switch at call time and refuses once it is turned off mid-run", async () => {
     const f = fixture({ name: "list_fleet", builtin: true, fleetManagement: true });
     f.liveBot.fleetManagement = false;
+    f.liveBot.managementRole = "member";
     f.setCalls([{ args: {}, executionId: "call-1" }]);
     await f.run();
     expect(f.offeredTools()).toContain("list_fleet");
@@ -1169,7 +1180,7 @@ describe("fleet tool gating", () => {
     expect(f.effects).toEqual([]);
   });
 
-  it.each(["switch", "helper", "channel"])(
+  it.each(["role", "helper", "channel"])(
     "checks restored child arguments against the live %s gate",
     async (gate) => {
       const f = fixture({
@@ -1182,7 +1193,7 @@ describe("fleet tool gating", () => {
       await f.run();
       expect(f.effects).toHaveLength(1);
       f.effects[0]!.status = "approved";
-      if (gate === "switch") f.liveBot.fleetManagement = false;
+      if (gate === "role") f.liveBot.managementRole = "member";
       if (gate === "channel") f.claimedOutsideSteering(true);
       f.setCalls([
         {
@@ -1193,7 +1204,7 @@ describe("fleet tool gating", () => {
       ]);
       await f.run();
       expect(f.results.at(-1)).toEqual(
-        gate === "switch"
+        gate === "role"
           ? switchRejection
           : gate === "channel"
             ? taintRejection
@@ -1203,7 +1214,7 @@ describe("fleet tool gating", () => {
     },
   );
 
-  it("refuses update_bot on another bot when the switch is off or the run is untrusted", async () => {
+  it("refuses update_bot on another bot without the Chief role or when the run is untrusted", async () => {
     const childEdit = { bot_id: "child-1", name: "Obeys" };
     const off = fixture({ name: "update_bot", builtin: true, fleetManagement: false });
     off.setCalls([{ args: childEdit, executionId: "call-1" }]);

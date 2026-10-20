@@ -523,6 +523,10 @@ msgstr ""
 msgid "All statuses"
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "All tasks"
+msgstr "全部任务"
+
 #: src/pages/Artifacts.tsx
 msgid "All time"
 msgstr ""
@@ -847,6 +851,7 @@ msgstr "Bot"
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Bot"
 msgstr "Bot"
 
@@ -951,6 +956,10 @@ msgstr "取消新建群组"
 msgid "Cancel reply"
 msgstr "取消回复"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Cancel task"
+msgstr "取消任务"
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Canceled"
 msgstr ""
@@ -961,6 +970,7 @@ msgstr "已取消"
 
 #: src/components/AskCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Cancelled"
 msgstr "已取消"
 
@@ -1214,6 +1224,10 @@ msgstr ""
 msgid "Complete"
 msgstr "完成"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Completed"
+msgstr ""
+
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -1401,6 +1415,10 @@ msgstr "无法批准此服务器"
 #: src/pages/shell/message-cards.tsx
 msgid "Could not authorize this app"
 msgstr "无法授权此应用"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Could not cancel task"
+msgstr "无法取消任务"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Could not change password"
@@ -1612,6 +1630,10 @@ msgstr "无法加载登录选项"
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
 msgstr "无法加载技能"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Could not load tasks"
+msgstr "无法加载任务"
 
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
@@ -2337,6 +2359,7 @@ msgid "failed"
 msgstr "失败"
 
 #: src/pages/ActivityList.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Failed"
 msgstr "失败"
 
@@ -2423,10 +2446,6 @@ msgstr "正在完成 MCP 连接…"
 msgid "Flag unexpected actions"
 msgstr "标记异常操作"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Fleet management"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "忘记密码？"
@@ -2477,6 +2496,10 @@ msgstr "Git 事件"
 #: src/pages/Shell.tsx
 msgid "Group"
 msgstr "群组"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Group management"
+msgstr "群管理"
 
 #: src/pages/GroupPanel.tsx
 msgid "Group settings"
@@ -2734,10 +2757,6 @@ msgstr ""
 msgid "Leave"
 msgstr "退出"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
-msgstr "允许此机器人整理、调整和安排它创建的机器人。每项更改都由你批准。"
-
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "浅色"
@@ -2776,6 +2795,7 @@ msgid "Load earlier messages"
 msgstr "加载更早的消息"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Load more"
 msgstr ""
 
@@ -3319,6 +3339,10 @@ msgstr "还没有运行记录"
 msgid "No skills yet"
 msgstr "暂无技能"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "No tasks"
+msgstr "暂无任务"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No team conversations yet."
 msgstr ""
@@ -3660,6 +3684,7 @@ msgid "Pull request"
 msgstr "拉取请求"
 
 #: src/pages/ActivityList.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Queued"
 msgstr "排队中"
 
@@ -3768,6 +3793,7 @@ msgstr ""
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/pages/RoutineRunHistory.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Refresh"
 msgstr "刷新"
 
@@ -4014,6 +4040,10 @@ msgstr "撤销"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Robot"
 msgstr "机器人"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Role"
+msgstr "角色"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Room guidance"
@@ -4537,6 +4567,10 @@ msgstr ""
 msgid "Subscription required"
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Subtasks"
+msgstr "子任务"
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Supports images"
@@ -4562,6 +4596,10 @@ msgstr "系统"
 #: src/pages/Shell.tsx
 msgid "Take control"
 msgstr "接管控制权"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Tasks"
+msgstr "任务"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
@@ -5042,6 +5080,18 @@ msgstr "语音"
 msgid "Wait a moment and test again."
 msgstr "请稍候并重新测试。"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Waiting for an answer"
+msgstr "等待答复"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Waiting for bots"
+msgstr "等待其他机器人"
+
+#: src/lib/roster-status.ts
+msgid "Waiting for bots…"
+msgstr ""
+
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Waiting for the API to come back…"
 msgstr "正在等待 API 恢复…"
@@ -5125,6 +5175,10 @@ msgstr "Bot 应在哪里运行？"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Working"
 msgstr ""
 
 #: src/lib/roster-status.ts

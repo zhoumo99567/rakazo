@@ -73,6 +73,8 @@ export const DELEGATION_TOOL_NAMES = new Set<string>([
   "archive_bot",
   "delete_bot",
   "handoff_to_bot",
+  "task_status",
+  "task_cancel",
   "message_bot",
   ...FLEET_TOOL_NAMES,
 ]);
@@ -178,8 +180,8 @@ const scheduleCreateInputSchema = {
 };
 
 const childRoutineTargetProperties = {
-  bot_id: { type: "string", description: "Id of a bot you created." },
-  bot_name: { type: "string", description: "Exact name of a bot you created." },
+  bot_id: { type: "string", description: "Id of an ordinary bot in your space." },
+  bot_name: { type: "string", description: "Exact name of an ordinary bot in your space." },
 };
 
 /** Same exactly-one-timing-method rule as schedule_create, plus the target bot. */
@@ -1161,7 +1163,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "spawn_bot",
     description:
-      "Create a full, regular bot — the same kind the user creates from the + button. It gets its own thread, computer, and memory, and appears as a peer in the bot list. Do not also call run_subagent. Creating the bot is the whole action. Only set prompt if the user asked that new bot to start work immediately.",
+      "Create a full, regular bot — the same kind the user creates from the + button. It gets its own thread, computer, and memory, and appears as a peer in the bot list. Do not also call run_subagent. Only a Chief may create ordinary bots. Only set prompt if the user asked the new bot to start work; in a private task that creates a child task whose result returns automatically.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1234,7 +1236,7 @@ export const builtinAgentTools: ConnectorTool[] = [
         },
         bot_id: {
           type: "string",
-          description: "A bot you created, to update its profile instead of yours.",
+          description: "An ordinary bot in your space, to update its profile instead of yours.",
         },
       },
     },
@@ -1242,14 +1244,14 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "list_fleet",
     description:
-      "List the bots and groups of this user with their ids, sections and pinned state, and which bots you created. Pass bot_id of a bot you created to read only its full instructions and instructionsVersion, which set_child_instructions needs as expected_version. Call this before changing the fleet.",
+      "List the bots and groups of this user with their ids, sections and pinned state, and which bots you created. Pass bot_id of an ordinary bot in your space to read only its full instructions and instructionsVersion, which set_child_instructions needs as expected_version. Call this before changing the fleet.",
     inputSchema: {
       type: "object",
       properties: {
         bot_id: {
           type: "string",
           description:
-            "A bot you created, to read its instructions and version instead of the roster.",
+            "An ordinary bot in your space, to read its instructions and version instead of the roster.",
         },
       },
       additionalProperties: false,
@@ -1304,7 +1306,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "set_child_instructions",
     description:
-      "Replace the instructions of a bot you created. Identify it by bot_id or bot_name (exact). Only bots you created. Pass expected_version from list_fleet with that bot_id. One instruction edit per bot per run. Needs the owner's approval.",
+      "Replace the instructions of an ordinary bot in your space. Identify it by bot_id or bot_name (exact). Chief only; the target must belong to the same user and space. Pass expected_version from list_fleet with that bot_id. One instruction edit per bot per run. Needs the owner's approval.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1322,7 +1324,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "set_child_bot_model",
     description:
-      "Set the model of a bot you created, or reset it to the default with clear: true. Identify it by bot_id or bot_name (exact). Only bots you created. Needs the owner's approval.",
+      "Set the model of an ordinary bot in your space, or reset it to the default with clear: true. Identify it by bot_id or bot_name (exact). Chief only; the target must belong to the same user and space. Needs the owner's approval.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1338,13 +1340,13 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "create_child_routine",
     description:
-      "Schedule a routine that wakes a bot you created in its own thread. Identify it by bot_id or bot_name (exact). Only bots you created. Repeats: cron or every/unit (min 1 minute). One-shot: runAt, delayMinutes, or delaySeconds. Needs the owner's approval.",
+      "Schedule a routine that wakes an ordinary bot in your space in its own thread. Identify it by bot_id or bot_name (exact). Chief only; the target must belong to the same user and space. Repeats: cron or every/unit (min 1 minute). One-shot: runAt, delayMinutes, or delaySeconds. Needs the owner's approval.",
     inputSchema: createChildRoutineInputSchema,
   },
   {
     name: "archive_bot",
     description:
-      "Archive a bot this bot created. Archiving stops its work and routines, hides it from the active list, and preserves its conversation, memory, and files for the user to restore or delete later. confirm_name must exactly match its name. This cannot archive you, bots the user created, or bots another bot created.",
+      "Chief only: archive an ordinary bot belonging to the same user in this space. Archiving stops its work and routines, hides it from the active list, and preserves its conversation, memory, and files for the user to restore or delete later. confirm_name must exactly match its name. This cannot archive you or another Chief.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1352,7 +1354,7 @@ export const builtinAgentTools: ConnectorTool[] = [
         bot_id: {
           type: "string",
           description:
-            "Optional bot id. If omitted, the unique bot this bot created with confirm_name is archived.",
+            "Optional bot id. If omitted, the unique ordinary bot with confirm_name is archived.",
         },
       },
       required: ["confirm_name"],
@@ -1370,6 +1372,11 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           description: "Exact name of the target bot when bot_id is omitted.",
         },
+        task_id: {
+          type: "string",
+          description: "Active parent or child task id; required when a bot has multiple tasks.",
+        },
+        reply_to: { type: "string", description: "Task question message id being answered." },
         message: { type: "string", description: "What to send." },
         intent: {
           type: "string",
@@ -1383,7 +1390,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "handoff_to_bot",
     description:
-      "In a group chat only: transfer a genuinely distinct next stage to another current member. Appends a visible handoff and starts that bot asynchronously. Do not hand a stage back merely to report or repeat the same work; post results in the shared thread.",
+      "In a private task, assign work to another bot as a durable child task. Your task remains yours; results return automatically. You can assign several children, continue independent work, then end the turn to wait. In a group chat, transfer the next stage to another current member as a visible handoff.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1395,6 +1402,23 @@ export const builtinAgentTools: ConnectorTool[] = [
         message: { type: "string", description: "What the receiving bot should do next." },
       },
       required: ["message"],
+    },
+  },
+  {
+    name: "task_status",
+    readOnly: true,
+    description:
+      "Read the status of your task or its descendants. A Chief can also inspect ordinary bots' tasks in its space. Results arrive automatically; do not poll.",
+    inputSchema: { type: "object", properties: { task_id: { type: "string" } }, required: [] },
+  },
+  {
+    name: "task_cancel",
+    description:
+      "Cancel a child task and its descendants. A Chief can also cancel ordinary bots' tasks in its space. This does not delete bots.",
+    inputSchema: {
+      type: "object",
+      properties: { task_id: { type: "string" }, reason: { type: "string" } },
+      required: ["task_id", "reason"],
     },
   },
 ];

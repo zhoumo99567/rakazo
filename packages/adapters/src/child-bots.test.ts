@@ -34,6 +34,11 @@ import {
 import { BrowserStoppedReleaseError } from "./computer-screens.js";
 import { LocalAgentHomeStore } from "./home.js";
 
+vi.mock("../../db/src/bot-management.js", () => ({
+  requireBotManager: vi.fn(async () => undefined),
+  lockBotManagement: vi.fn(async () => undefined),
+}));
+
 const fsHooks = vi.hoisted(() => ({
   afterRealpath: undefined as ((resolved: string) => Promise<void>) | undefined,
 }));
@@ -61,13 +66,18 @@ const context = {
 
 function noGroupMemberships() {
   return {
+    thread: { findUnique: vi.fn(async () => null) },
+    task: { findMany: vi.fn(async () => []) },
     $queryRaw: vi.fn().mockResolvedValue([]),
     chatGroup: {
       findMany: vi.fn().mockResolvedValue([]),
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     chatGroupMember: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
-    artifact: { findMany: vi.fn().mockResolvedValue([]) },
+    artifact: {
+      updateMany: vi.fn(async () => ({ count: 0 })),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   };
 }
 
@@ -76,19 +86,32 @@ describe("spawned bot creation", () => {
     const findUnique = vi.fn().mockResolvedValue({
       id: "child-1",
       name: "Scout",
+      spaceId: "workspace-1",
+      userId: "user-1",
+      parentBotId: "parent-1",
+      archivedAt: null,
       title: "Venue researcher",
       thread: { id: "thread-1" },
     });
     const enqueue = vi.fn().mockResolvedValue(undefined);
     const prisma = {
       bot: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUniqueOrThrow: vi.fn(async () => ({ id: "child-1", archivedAt: null, thread: null })),
         count: vi.fn().mockResolvedValue(0),
         findFirst: vi.fn().mockResolvedValue({ id: "parent-1" }),
         findUnique,
       },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
-      run: { findUnique: vi.fn().mockResolvedValue({ id: "child-run-1" }) },
-      $transaction: vi.fn().mockRejectedValue(new Error("unique spawn key")),
+      run: {
+        findMany: vi.fn(async () => []),
+        findUniqueOrThrow: vi.fn(async () => ({ task: { protocol: "legacy" } })),
+        findUnique: vi.fn().mockResolvedValue({ id: "child-run-1" }),
+      },
+      $transaction: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("unique spawn key"))
+        .mockImplementation(async (work) => work({})),
     } as unknown as PrismaClient;
 
     const result = await spawnBot(
@@ -197,6 +220,8 @@ describe("spawned bot archival", () => {
     const archivedAt = new Date("2026-08-16T12:00:00.000Z");
     const prisma = {
       bot: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUniqueOrThrow: vi.fn(async () => ({ id: "child-1", archivedAt: null, thread: null })),
         findMany: vi.fn().mockResolvedValue([
           {
             id: "child-1",
@@ -209,17 +234,33 @@ describe("spawned bot archival", () => {
         ]),
       },
       computer: { findUnique: vi.fn().mockResolvedValue(null) },
-      run: { findMany: vi.fn().mockResolvedValue([]) },
+      run: { findUnique: vi.fn(async () => null), findMany: vi.fn().mockResolvedValue([]) },
       routine: { findMany: vi.fn().mockResolvedValue([]) },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
         callback({
           ...noGroupMemberships(),
-          run: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-          task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          run: {
+            findUnique: vi.fn(async () => null),
+            findMany: vi.fn(async () => []),
+            updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          },
+          task: {
+            findUnique: vi.fn(async () => ({ protocol: "legacy", id: "task-1" })),
+            findMany: vi.fn(async () => []),
+            updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          },
           routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
           computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
           computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-          bot: { update: vi.fn().mockResolvedValue({}) },
+          bot: {
+            updateMany: vi.fn(async () => ({ count: 1 })),
+            findUniqueOrThrow: vi.fn(async () => ({
+              id: "child-1",
+              archivedAt: null,
+              thread: null,
+            })),
+            update: vi.fn().mockResolvedValue({}),
+          },
         }),
       ),
     } as unknown as PrismaClient;
@@ -233,6 +274,8 @@ describe("spawned bot archival", () => {
           jobs: { cancel: vi.fn() } as unknown as JobPublisher,
         },
         {
+          runId: "run-chief",
+          operationKey: "archive-test",
           spawnedByBotId: "parent-1",
           userId: "user-1",
           spaceId: "workspace-1",
@@ -256,12 +299,18 @@ describe("destroyBot", () => {
     const deleteArtifacts = vi.fn().mockResolvedValue({ count: 1 });
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
+        thread: { findUnique: vi.fn(async () => null) },
+        task: { findMany: vi.fn(async () => []) },
         $queryRaw: vi.fn().mockResolvedValue([]),
         chatGroup: {
           findMany: vi.fn().mockResolvedValue([]),
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
         },
-        artifact: { findMany: findArtifacts, deleteMany: deleteArtifacts },
+        artifact: {
+          updateMany: vi.fn(async () => ({ count: 0 })),
+          findMany: findArtifacts,
+          deleteMany: deleteArtifacts,
+        },
         computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: releaseComputers },
         $executeRaw: executeRaw,
@@ -271,10 +320,13 @@ describe("destroyBot", () => {
     );
     const prisma = {
       bot: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUniqueOrThrow: vi.fn(async () => ({ id: "child-1", archivedAt: null, thread: null })),
         findUnique: vi.fn(),
       },
       computer: { findUnique: vi.fn().mockResolvedValue(null) },
       run: {
+        findUnique: vi.fn(async () => null),
         findMany: vi.fn().mockResolvedValue([]),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
@@ -295,7 +347,7 @@ describe("destroyBot", () => {
       { deleteMemories: false },
     );
 
-    expect(transaction).toHaveBeenCalledOnce();
+    expect(transaction).toHaveBeenCalledTimes(2);
     expect(releaseComputers).toHaveBeenCalledWith({
       where: {
         OR: [{ controlBotId: "bot-1" }, { executionBotId: "bot-1" }],
@@ -358,6 +410,7 @@ describe("destroyBot", () => {
     ]);
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
+        thread: { findUnique: vi.fn(async () => null) },
         $queryRaw: queryRaw,
         chatGroup: {
           findMany: vi.fn().mockResolvedValue([
@@ -395,9 +448,10 @@ describe("destroyBot", () => {
           updateMany: cancelRuns,
         },
         attempt: { updateMany: cancelAttempts },
-        task: { updateMany: cancelTasks },
+        task: { findMany: vi.fn(async () => []), updateMany: cancelTasks },
         chatGroupMember: { deleteMany: deleteMemberships },
         artifact: {
+          updateMany: vi.fn(async () => ({ count: 0 })),
           findMany: vi.fn().mockResolvedValue([]),
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
         },
@@ -408,17 +462,26 @@ describe("destroyBot", () => {
         computer: { updateMany: clearExecution },
         $executeRaw: vi.fn(),
         botDeletion: { create: vi.fn() },
-        bot: { delete: vi.fn() },
+        bot: {
+          updateMany: vi.fn(async () => ({ count: 1 })),
+          findUniqueOrThrow: vi.fn(async () => ({ id: "child-1", archivedAt: null, thread: null })),
+          delete: vi.fn(),
+        },
       }),
     );
     const prisma = {
+      bot: { updateMany: vi.fn(async () => ({ count: 1 })) },
       computer: { findUnique: vi.fn().mockResolvedValue(null) },
       run: {
+        findUnique: vi.fn(async () => null),
         findMany: vi.fn().mockResolvedValue([]),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       routine: { findMany: vi.fn().mockResolvedValue([]) },
-      artifact: { findMany: vi.fn().mockResolvedValue([]) },
+      artifact: {
+        updateMany: vi.fn(async () => ({ count: 0 })),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
       $transaction: transaction,
     } as unknown as PrismaClient;
 
@@ -493,15 +556,21 @@ describe("destroyBot", () => {
     const transaction = vi.fn().mockRejectedValue(new Error("delete failed"));
     const prisma = {
       bot: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUniqueOrThrow: vi.fn(async () => ({ id: "child-1", archivedAt: null, thread: null })),
         findUnique: vi.fn(),
       },
       computer: { findUnique: vi.fn().mockResolvedValue(null) },
       run: {
+        findUnique: vi.fn(async () => null),
         findMany: vi.fn().mockResolvedValue([]),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       routine: { findMany: vi.fn().mockResolvedValue([]) },
-      artifact: { findMany: vi.fn().mockResolvedValue([]) },
+      artifact: {
+        updateMany: vi.fn(async () => ({ count: 0 })),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
       $transaction: transaction,
     } as unknown as PrismaClient;
 
@@ -536,13 +605,18 @@ describe("destroyBot", () => {
     const finalError = new Error("second attempt reached");
     const transaction = vi.fn().mockRejectedValueOnce(conflict).mockRejectedValueOnce(finalError);
     const prisma = {
+      bot: { updateMany: vi.fn(async () => ({ count: 1 })) },
       computer: { findUnique: vi.fn().mockResolvedValue(null) },
       run: {
+        findUnique: vi.fn(async () => null),
         findMany: vi.fn().mockResolvedValue([]),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       routine: { findMany: vi.fn().mockResolvedValue([]) },
-      artifact: { findMany: vi.fn().mockResolvedValue([]) },
+      artifact: {
+        updateMany: vi.fn(async () => ({ count: 0 })),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
       $transaction: transaction,
     } as unknown as PrismaClient;
 
@@ -1597,6 +1671,62 @@ describe("destroyBot", () => {
 });
 
 describe("archiveBot", () => {
+  it("does not re-archive or cancel new work when an old archive operation replays", async () => {
+    const archivedAt = new Date("2026-09-01T00:00:00.000Z");
+    const update = vi.fn();
+    const cancelRuns = vi.fn();
+    const cancel = vi.fn();
+    const tx = {
+      $queryRaw: vi.fn(async () => []),
+      thread: { findUnique: vi.fn(async () => ({ id: "thread-child" })) },
+      run: {
+        findUnique: vi.fn(async () => ({ threadId: "thread-parent" })),
+        findMany: vi.fn(async () => [{ id: "new-run" }]),
+        updateMany: cancelRuns,
+      },
+      task: { findMany: vi.fn(async () => []) },
+      bot: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          archivedAt,
+          archiveOperationKey: "archive-old",
+          thread: { id: "thread-child" },
+        })),
+        update,
+      },
+    };
+    const claim = vi.fn(async () => ({ count: 0 }));
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      computer: { findUnique: vi.fn(async () => null) },
+      run: { findMany: vi.fn(async () => [{ id: "new-run" }]) },
+      routine: { findMany: vi.fn(async () => []) },
+      // The owner restored/promoted this bot between the snapshot and the claim.
+      bot: { updateMany: claim },
+    } as unknown as PrismaClient;
+    await archiveBot(
+      {
+        prisma,
+        sandbox: {} as SandboxProvider,
+        home: {} as AgentHomeStore,
+        jobs: { cancel } as unknown as JobPublisher,
+      },
+      { id: "child", spaceId: "workspace-1", name: "Worker", archivedAt },
+      context,
+      {
+        manager: { botId: "parent", userId: "user-1", runId: "old-run" },
+        operationKey: "archive-old",
+      },
+    );
+    expect(update).not.toHaveBeenCalled();
+    expect(cancelRuns).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+    expect(claim).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "child", archivedAt, archiveCleanupPending: true }),
+      }),
+    );
+  });
+
   it("stops work and routines while preserving the bot", async () => {
     const updateBot = vi.fn().mockResolvedValue({});
     const disableRoutines = vi.fn().mockResolvedValue({ count: 2 });
@@ -1604,17 +1734,31 @@ describe("archiveBot", () => {
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
         ...groupCleanup,
-        run: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-        task: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        run: {
+          findUnique: vi.fn(async () => null),
+          findMany: vi.fn(async () => [{ id: "run-1" }]),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        task: {
+          findUnique: vi.fn(async () => ({ protocol: "legacy", id: "task-1" })),
+          findMany: vi.fn(async () => []),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
         routine: { updateMany: disableRoutines },
         computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-        bot: { update: updateBot },
+        bot: {
+          updateMany: vi.fn(async () => ({ count: 1 })),
+          findUniqueOrThrow: vi.fn(async () => ({ archivedAt: null })),
+          update: updateBot,
+        },
       }),
     );
     const cancel = vi.fn().mockResolvedValue(undefined);
     const prisma = {
       bot: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUniqueOrThrow: vi.fn(async () => ({ id: "child-1", archivedAt: null, thread: null })),
         findUnique: vi.fn().mockResolvedValue({
           id: "bot-1",
           spaceId: "workspace-1",
@@ -1622,7 +1766,10 @@ describe("archiveBot", () => {
         }),
       },
       computer: { findUnique: vi.fn().mockResolvedValue(null) },
-      run: { findMany: vi.fn().mockResolvedValue([{ id: "run-1" }]) },
+      run: {
+        findUnique: vi.fn(async () => null),
+        findMany: vi.fn().mockResolvedValue([{ id: "run-1" }]),
+      },
       routine: { findMany: vi.fn().mockResolvedValue([]) },
       $transaction: transaction,
     } as unknown as PrismaClient;
@@ -1644,7 +1791,7 @@ describe("archiveBot", () => {
     });
     expect(updateBot).toHaveBeenCalledWith({
       where: { id: "bot-1" },
-      data: { archivedAt: expect.any(Date), pinned: false },
+      data: { archivedAt: expect.any(Date), archiveCleanupPending: true, pinned: false },
     });
     expect(groupCleanup.$queryRaw).not.toHaveBeenCalled();
     expect(groupCleanup.chatGroup.deleteMany).not.toHaveBeenCalled();
@@ -1658,12 +1805,24 @@ describe("archiveBot", () => {
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
         ...noGroupMemberships(),
-        run: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-        task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        run: {
+          findUnique: vi.fn(async () => null),
+          findMany: vi.fn(async () => []),
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+        task: {
+          findUnique: vi.fn(async () => ({ protocol: "legacy", id: "task-1" })),
+          findMany: vi.fn(async () => []),
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
         routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-        bot: { update: vi.fn().mockResolvedValue({}) },
+        bot: {
+          updateMany: vi.fn(async () => ({ count: 1 })),
+          findUniqueOrThrow: vi.fn(async () => ({ id: "child-1", archivedAt: null, thread: null })),
+          update: vi.fn().mockResolvedValue({}),
+        },
       }),
     );
     const dedicated = {
@@ -1675,12 +1834,13 @@ describe("archiveBot", () => {
     };
     const stop = vi.fn().mockRejectedValue(new Error("stop failed"));
     const prisma = {
+      bot: { updateMany: vi.fn(async () => ({ count: 1 })) },
       computer: {
         findUnique: vi.fn().mockResolvedValue(dedicated),
         update: updateComputer,
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
-      run: { findMany: vi.fn().mockResolvedValue([]) },
+      run: { findUnique: vi.fn(async () => null), findMany: vi.fn().mockResolvedValue([]) },
       routine: { findMany: vi.fn().mockResolvedValue([]) },
       $transaction: transaction,
     } as unknown as PrismaClient;
@@ -1723,20 +1883,33 @@ describe("archiveBot", () => {
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
         ...noGroupMemberships(),
-        run: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-        task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        run: {
+          findUnique: vi.fn(async () => null),
+          findMany: vi.fn(async () => []),
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+        task: {
+          findUnique: vi.fn(async () => ({ protocol: "legacy", id: "task-1" })),
+          findMany: vi.fn(async () => []),
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
         routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-        bot: { update: vi.fn().mockResolvedValue({}) },
+        bot: {
+          updateMany: vi.fn(async () => ({ count: 1 })),
+          findUniqueOrThrow: vi.fn(async () => ({ id: "child-1", archivedAt: null, thread: null })),
+          update: vi.fn().mockResolvedValue({}),
+        },
       }),
     );
     const prisma = {
+      bot: { updateMany: vi.fn(async () => ({ count: 1 })) },
       computer: {
-        findUnique: vi.fn().mockResolvedValueOnce(booting).mockResolvedValueOnce(running),
+        findUnique: vi.fn().mockResolvedValueOnce(booting).mockResolvedValue(running),
         updateMany,
       },
-      run: { findMany: vi.fn().mockResolvedValue([]) },
+      run: { findUnique: vi.fn(async () => null), findMany: vi.fn().mockResolvedValue([]) },
       routine: { findMany: vi.fn().mockResolvedValue([]) },
       $transaction: transaction,
     } as unknown as PrismaClient;
@@ -1785,21 +1958,38 @@ describe("archiveBot", () => {
       const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
         callback({
           ...noGroupMemberships(),
-          run: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-          task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          run: {
+            findUnique: vi.fn(async () => null),
+            findMany: vi.fn(async () => []),
+            updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          },
+          task: {
+            findUnique: vi.fn(async () => ({ protocol: "legacy", id: "task-1" })),
+            findMany: vi.fn(async () => []),
+            updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          },
           routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
           computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
           computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-          bot: { update: vi.fn().mockResolvedValue({}) },
+          bot: {
+            updateMany: vi.fn(async () => ({ count: 1 })),
+            findUniqueOrThrow: vi.fn(async () => ({
+              id: "child-1",
+              archivedAt: null,
+              thread: null,
+            })),
+            update: vi.fn().mockResolvedValue({}),
+          },
         }),
       );
       const prisma = {
+        bot: { updateMany: vi.fn(async () => ({ count: 1 })) },
         computer: {
           findUnique: vi.fn(async (query: { where: { id?: string } }) =>
             query.where.id === team.id ? team : null,
           ),
         },
-        run: { findMany: vi.fn().mockResolvedValue([]) },
+        run: { findUnique: vi.fn(async () => null), findMany: vi.fn().mockResolvedValue([]) },
         routine: { findMany: vi.fn().mockResolvedValue([]) },
         $transaction: transaction,
       } as unknown as PrismaClient;
@@ -1878,28 +2068,37 @@ function runInWorkspace(cwd: string, argv: readonly string[]) {
 function deletionPrisma(team: { id: string }) {
   const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
     callback({
+      thread: { findUnique: vi.fn(async () => null) },
+      task: { findMany: vi.fn(async () => []) },
       $queryRaw: vi.fn().mockResolvedValue([]),
       chatGroup: {
         findMany: vi.fn().mockResolvedValue([]),
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       artifact: {
+        updateMany: vi.fn(async () => ({ count: 0 })),
         findMany: vi.fn().mockResolvedValue([]),
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
       botDeletion: { create: vi.fn().mockResolvedValue({}) },
-      bot: { delete: vi.fn().mockResolvedValue({}) },
+      bot: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUniqueOrThrow: vi.fn(async () => ({ id: "child-1", archivedAt: null, thread: null })),
+        delete: vi.fn().mockResolvedValue({}),
+      },
     }),
   );
   return {
+    bot: { updateMany: vi.fn(async () => ({ count: 1 })) },
     computer: {
       findUnique: vi.fn(async (query: { where: { id?: string; scopeKey?: string } }) =>
         query.where.id === team.id || query.where.scopeKey === "team:workspace-1" ? team : null,
       ),
     },
     run: {
+      findUnique: vi.fn(async () => null),
       findMany: vi.fn().mockResolvedValue([]),
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },

@@ -207,7 +207,7 @@ describe("archiveGroup", () => {
       chatGroup: { findFirst, update: groupUpdate },
       run: { findMany: findManyRuns, updateMany: runUpdateMany },
       attempt: { updateMany: attemptUpdateMany },
-      task: { updateMany: taskUpdateMany },
+      task: { findMany: vi.fn(async () => []), updateMany: taskUpdateMany },
       computerExecutionLease: { findMany: leaseFindMany, updateMany: leaseUpdateMany },
       computer: { findMany: findManyComputers, updateMany: computerUpdateMany },
       event: { deleteMany: eventDeleteMany },
@@ -436,6 +436,7 @@ describe("createGroup", () => {
       ],
     };
     const tx = {
+      task: { findMany: vi.fn(async () => []) },
       $queryRaw: vi.fn(),
       spaceMember: {
         findUnique: vi.fn(async () => ({

@@ -39,11 +39,16 @@ function tx(options?: {
     },
     attempt: { updateMany: vi.fn(async () => ({ count: 1 })) },
     task: {
+      findUnique: vi.fn(async () => ({ id: "task-1", protocol: "legacy" })),
       updateMany: vi.fn(async () => ({ count: 1 })),
       create: vi.fn(async () => ({ id: "task-next" })),
     },
-    thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 9 })) },
+    thread: {
+      findUnique: vi.fn(async () => ({ groupId: "legacy-group" })),
+      update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 9 })),
+    },
     message: {
+      updateMany: vi.fn(async () => ({ count: 1 })),
       findFirst: vi.fn(async () => null),
       create: vi.fn(async (args: { data: Record<string, unknown> }) => {
         const row = { id: "message-expired", ...args.data };
