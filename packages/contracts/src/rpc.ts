@@ -295,6 +295,7 @@ export const appContract = {
     setDefault: oc
       .input(
         z.object({
+          credentialId: Id.optional(),
           provider: z.string(),
           modelId: z.string(),
           thinkingLevel: ThinkingLevelSchema.nullable().optional(),
@@ -302,7 +303,7 @@ export const appContract = {
       )
       .output(z.object({ ok: z.literal(true) })),
     disconnect: oc
-      .input(z.object({ provider: z.string().trim().min(1) }))
+      .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
       .output(z.object({ ok: z.literal(true) })),
   },
   bots: {

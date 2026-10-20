@@ -116,6 +116,7 @@ test("custom connections persist reasoning support and bot thinking", async ({
   await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
   const credentials = await rpc<
     Array<{
+      id: string;
       modelId?: string;
       reasoning?: boolean;
       thinkingLevel?: string | null;
@@ -180,7 +181,13 @@ test("custom connections persist reasoning support and bot thinking", async ({
   await expect(model).toBeVisible();
   await expect(model).toContainText("arbitrary-model");
   // Value key — not a /arbitrary-model/ label match, which also hits "Space default (arbitrary-model)".
-  await model.selectOption("openai-compatible::arbitrary-model");
+  await model.selectOption(
+    JSON.stringify([
+      "openai-compatible",
+      "arbitrary-model",
+      credentials.find((entry) => entry.modelId === "arbitrary-model")!.id,
+    ]),
+  );
   const thinking = settings.getByRole("combobox", { name: "Thinking", exact: true });
   await expect(thinking).toBeVisible();
   await thinking.selectOption("low");
@@ -850,4 +857,59 @@ test("saves and reloads an ordered backup model list for connected models", asyn
   expect(await rpc(page, "models/backups", {})).toEqual([
     { provider: targets[1]!.provider, modelId: targets[1]!.id },
   ]);
+});
+
+test("keeps compatible connections separate and binds a bot to one", async ({ page }, testInfo) => {
+  await signup(page, `multi-connection-${Date.now()}@rakazo.test`, "password12", "Connections");
+  await completeOnboarding(page);
+  await openUserSettings(page, "models");
+  await page.getByPlaceholder("Search providers").fill("openai-compatible");
+  await page.getByRole("button", { name: /OpenAI-compatible/ }).click();
+  for (const [name, port] of [
+    ["Endpoint A", 8081],
+    ["Endpoint B", 8082],
+  ] as const) {
+    await page.getByRole("combobox", { name: "Connection", exact: true }).selectOption("");
+    await page.getByLabel("Connection name", { exact: true }).fill(name);
+    await page.getByLabel("OpenAI-compatible server URL").fill(`http://127.0.0.1:${port}/v1`);
+    await page.getByLabel("Model id", { exact: true }).fill("shared-model");
+    await page.getByLabel("API key", { exact: true }).fill(`fake-key-${port}`);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
+  }
+  const connections = (
+    await rpc<Array<{ id: string; provider: string; label: string; baseUrl: string }>>(
+      page,
+      "models/credentials",
+      {},
+    )
+  ).filter((entry) => entry.provider === "openai-compatible");
+  expect(connections).toHaveLength(2);
+  const second = connections.find((entry) => entry.label === "Endpoint B")!;
+  expect(second.baseUrl).toBe("http://127.0.0.1:8082/v1");
+  await captureScreenshot(page, testInfo, "multiple-compatible-connections");
+  await page.getByRole("button", { name: "Close model settings" }).click();
+  await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
+  const settings = page.getByTestId("bot-settings");
+  await settings.getByTestId("bot-settings-advanced").evaluate((element) => {
+    (element as HTMLDetailsElement).open = true;
+  });
+  await settings
+    .getByRole("combobox", { name: "Model", exact: true })
+    .selectOption(JSON.stringify(["openai-compatible", "shared-model", second.id]));
+  await settings.getByLabel("Model ID", { exact: true }).fill("another-model");
+  const saved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/bots/update") && response.ok(),
+  );
+  await settings.getByRole("button", { name: "Save", exact: true }).click();
+  await saved;
+  await page.reload();
+  await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
+  await settings.getByTestId("bot-settings-advanced").evaluate((element) => {
+    (element as HTMLDetailsElement).open = true;
+  });
+  await expect(settings.getByRole("combobox", { name: "Model", exact: true })).toHaveValue(
+    JSON.stringify(["openai-compatible", "another-model", second.id]),
+  );
+  await captureScreenshot(page, testInfo, "bot-compatible-connection");
 });

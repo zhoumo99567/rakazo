@@ -35,6 +35,7 @@ type FakeBot = {
   archivedAt?: Date | null;
   modelProvider?: string | null;
   modelId?: string | null;
+  modelCredentialId?: string | null;
   thinkingLevel?: string | null;
   title?: string;
   description?: string;
@@ -390,9 +391,15 @@ describe("prepareFleetRequest set_child_bot_model", () => {
       canonical: {
         botId: "bot-scout",
         botName: "Scout",
-        previous: { provider: "anthropic", model: "claude-old", thinkingLevel: null },
+        previous: {
+          provider: "anthropic",
+          model: "claude-old",
+          thinkingLevel: null,
+          credentialId: null,
+        },
         provider: "custom",
         model: "my-model",
+        credentialId: null,
       },
       summary: {
         title: "Change the model of Scout?",
@@ -1423,6 +1430,64 @@ describe("setChildBotModel", () => {
     model: "my-model",
   };
 
+  it("clears the connection binding when restoring the space default", async () => {
+    const { deps, prisma } = fakeFleet({
+      ...fleet,
+      bots: fleet.bots.map((bot) =>
+        bot.id === "bot-scout" ? { ...bot, modelCredentialId: "connection-a" } : bot,
+      ),
+    });
+    const prepared = await prepareFleetRequest(deps, run, "set_child_bot_model", {
+      bot_id: "bot-scout",
+      clear: true,
+    });
+    expect(prepared).toMatchObject({
+      ok: true,
+      canonical: { credentialId: null, previous: { credentialId: "connection-a" } },
+    });
+    if (!prepared.ok) throw new Error(prepared.error);
+    prisma.bot.update.mockResolvedValue({
+      id: "bot-scout",
+      name: "Scout",
+      title: "",
+      description: "",
+    });
+    prisma.$transaction.mockImplementation(async (write) =>
+      write({
+        ...prisma,
+        thread: { update: vi.fn(async () => ({ nextEventSeq: 2 })) },
+        event: { create: vi.fn(async () => ({ seq: 1 })) },
+      }),
+    );
+    await setChildBotModel({ ...deps, events: writeDeps(prisma).events }, run, prepared.canonical);
+    expect(prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ modelCredentialId: "connection-a" }),
+        data: expect.objectContaining({
+          modelCredentialId: null,
+          modelProvider: null,
+          modelId: null,
+        }),
+      }),
+    );
+  });
+
+  it("rejects a connection-only change made while approval waited", async () => {
+    const { deps, prisma } = fakeFleet({
+      ...fleet,
+      bots: fleet.bots.map((bot) =>
+        bot.id === "bot-scout" ? { ...bot, modelCredentialId: "connection-b" } : bot,
+      ),
+    });
+    expect(
+      await setChildBotModel({ ...deps, events: writeDeps(prisma).events }, run, {
+        ...canonical,
+        previous: { ...canonical.previous, credentialId: "connection-a" },
+      }),
+    ).toEqual({ error: "That bot's model changed since you approved; ask again." });
+    expect(prisma.bot.update).not.toHaveBeenCalled();
+  });
+
   it("fails at execution when the bot is no longer the caller's active child", async () => {
     const { deps, prisma } = fakeFleet({
       bots: fleet.bots.map((bot) =>
@@ -1465,7 +1530,7 @@ describe("setChildBotModel", () => {
     expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 
-  it("requires all three original model values in the atomic write", async () => {
+  it("requires the original model and connection in the atomic write", async () => {
     const { deps, prisma } = fakeFleet(fleet);
     const tx = {
       $queryRaw: vi.fn(),
@@ -1482,6 +1547,7 @@ describe("setChildBotModel", () => {
           id: "bot-scout",
           modelProvider: "anthropic",
           modelId: "claude-old",
+          modelCredentialId: null,
           thinkingLevel: null,
         },
       }),

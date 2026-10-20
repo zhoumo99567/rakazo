@@ -1352,6 +1352,14 @@ msgstr "已连接，下一条消息起即可使用其工具。"
 msgid "Connecting…"
 msgstr "正在连接…"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection"
+msgstr "连接"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection name"
+msgstr "连接名称"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Connection test failed."
 msgstr "连接测试失败。"
@@ -3089,6 +3097,10 @@ msgstr "模型“{modelId}”未列出。"
 msgid "Model id"
 msgstr "模型 ID"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Model ID"
+msgstr "模型 ID"
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Model options"
 msgstr "模型选项"
@@ -3202,6 +3214,10 @@ msgstr ""
 #: src/pages/shell/bot-panel.tsx
 msgid "New bot"
 msgstr "新建 Bot"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "New connection"
+msgstr "新建连接"
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"

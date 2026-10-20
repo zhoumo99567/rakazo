@@ -28,6 +28,7 @@ export async function commitBotUpdate(
     expectedModel?: {
       modelProvider: string | null;
       modelId: string | null;
+      modelCredentialId?: string | null;
       thinkingLevel: string | null;
     };
     instructionRestore?: { versionId: string; undo?: boolean };
@@ -66,6 +67,7 @@ export async function commitBotUpdate(
               "notifyOnFinish",
               "modelProvider",
               "modelId",
+              "modelCredentialId",
               "thinkingLevel",
               "pinned",
               "sectionId",

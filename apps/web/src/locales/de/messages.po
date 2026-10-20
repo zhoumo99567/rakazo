@@ -1352,6 +1352,14 @@ msgstr "Verbunden. Die Tools sind ab deiner nächsten Nachricht verfügbar."
 msgid "Connecting…"
 msgstr "Verbindung wird hergestellt…"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection"
+msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection name"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Connection test failed."
 msgstr "Verbindungstest fehlgeschlagen."
@@ -3089,6 +3097,10 @@ msgstr "Modell \"{modelId}\" wurde nicht aufgelistet."
 msgid "Model id"
 msgstr "Modell-ID"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Model ID"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Model options"
 msgstr "Modelloptionen"
@@ -3202,6 +3214,10 @@ msgstr ""
 #: src/pages/shell/bot-panel.tsx
 msgid "New bot"
 msgstr "Neuer Bot"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "New connection"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"

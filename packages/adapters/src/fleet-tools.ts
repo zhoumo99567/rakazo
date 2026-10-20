@@ -269,8 +269,11 @@ async function prepareChildModel(
   const previous = {
     provider: child.modelProvider,
     model: child.modelId,
+    credentialId: child.modelCredentialId ?? null,
     thinkingLevel: child.thinkingLevel ?? null,
   };
+  const credentialId =
+    !clear && provider === child.modelProvider ? (child.modelCredentialId ?? null) : null;
   const validated = await validateBotModelChange(
     { prisma: deps.prisma, ...deps.modelChange },
     {
@@ -278,6 +281,7 @@ async function prepareChildModel(
       spaceId: run.spaceId,
       provider: provider ?? null,
       model: model ?? null,
+      credentialId,
       thinkingLevel: thinkingLevel ?? null,
       current: previous,
     },
@@ -306,6 +310,7 @@ async function prepareChildModel(
       previous,
       provider: validated.provider,
       model: validated.model,
+      credentialId,
       ...(thinkingLevel ? { thinkingLevel } : {}),
     },
     summary: { title: `Change the model of ${cardName(child.name)}?`, lines },
@@ -971,6 +976,7 @@ export async function setChildBotModel(
   if (
     (previous?.provider ?? null) !== child.modelProvider ||
     (previous?.model ?? null) !== child.modelId ||
+    (previous?.credentialId ?? null) !== (child.modelCredentialId ?? null) ||
     (previous?.thinkingLevel ?? null) !== (child.thinkingLevel ?? null)
   ) {
     return { error: "That bot's model changed since you approved; ask again." };
@@ -982,8 +988,13 @@ export async function setChildBotModel(
       spaceId: run.spaceId,
       provider: text(canonical.provider) ?? null,
       model: text(canonical.model) ?? null,
+      credentialId: text(canonical.credentialId) ?? null,
       thinkingLevel: text(canonical.thinkingLevel) ?? null,
-      current: { provider: child.modelProvider, model: child.modelId },
+      current: {
+        provider: child.modelProvider,
+        model: child.modelId,
+        credentialId: child.modelCredentialId,
+      },
     },
   );
   if (!validated.ok) return { error: validated.error };
@@ -1006,11 +1017,13 @@ export async function setChildBotModel(
       expectedModel: {
         modelProvider: child.modelProvider,
         modelId: child.modelId,
+        modelCredentialId: child.modelCredentialId ?? null,
         thinkingLevel: child.thinkingLevel ?? null,
       },
       data: {
         modelProvider: validated.provider,
         modelId: validated.model,
+        modelCredentialId: text(canonical.credentialId) ?? null,
         thinkingLevel: validated.thinkingLevel,
       },
     });
@@ -1145,6 +1158,7 @@ const botSelect = {
   name: true,
   modelProvider: true,
   modelId: true,
+  modelCredentialId: true,
   thinkingLevel: true,
   thread: { select: { id: true } },
 } satisfies Prisma.BotSelect;

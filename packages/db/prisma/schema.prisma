@@ -8,21 +8,21 @@ datasource db {
 }
 
 model AiDataConsent {
-  userId String
-  spaceId String
+  userId       String
+  spaceId      String
   recipientKey String
-  version String
-  grantedAt DateTime @default(now())
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  space Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  spaceMember SpaceMember @relation(fields: [spaceId, userId], references: [spaceId, userId], onDelete: Cascade)
+  version      String
+  grantedAt    DateTime    @default(now())
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  space        Space       @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  spaceMember  SpaceMember @relation(fields: [spaceId, userId], references: [spaceId, userId], onDelete: Cascade)
 
   @@id([userId, spaceId, recipientKey])
   @@map("ai_data_consents")
 }
 
 model User {
-  aiDataConsents AiDataConsent[]
+  aiDataConsents              AiDataConsent[]
   id                          String                       @id
   name                        String
   email                       String
@@ -45,8 +45,8 @@ model User {
   actionApprovalRules         ActionApprovalRule[]
   actionAutoReviewPreferences ActionAutoReviewPreference[]
   createdSpaces               Space[]                      @relation("SpaceCreator")
-  botSecrets BotSecret[]
-  agentSecrets               AgentSecret[]
+  botSecrets                  BotSecret[]
+  agentSecrets                AgentSecret[]
   createdTickets              Ticket[]                     @relation("TicketCreatorUser")
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
 
@@ -114,7 +114,7 @@ model RateLimit {
 }
 
 model Organization {
-  id          String       @id
+  id          String          @id
   name        String
   slug        String
   logo        String?
@@ -197,7 +197,7 @@ model Member {
 }
 
 model Space {
-  aiDataConsents AiDataConsent[]
+  aiDataConsents              AiDataConsent[]
   id                          String                       @id
   organizationId              String
   organization                Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -239,7 +239,7 @@ model Space {
   memoryConfig                SpaceMemoryConfig?
   secrets                     Secret[]
   chatGroups                  ChatGroup[]
-  botSecrets BotSecret[]
+  botSecrets                  BotSecret[]
   externalConversations       ExternalConversation[]
   agentSecrets                AgentSecret[]
   board                       Board?
@@ -263,8 +263,8 @@ model SpaceMember {
   createdAt        DateTime
   modelPreferences SpaceModelPreference[]
   voicePreferences SpaceVoicePreference[]
-  aiDataConsents AiDataConsent[]
-  backupModels SpaceBackupModel[]
+  aiDataConsents   AiDataConsent[]
+  backupModels     SpaceBackupModel[]
 
   @@unique([spaceId, userId])
   @@index([organizationId, userId])
@@ -306,16 +306,16 @@ model DeploymentSettings {
 }
 
 model UserModelCredential {
-  id          String                 @id @default(cuid())
-  userId      String
-  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider    String
-  label       String
-  secretId    String
-  supportsImages Boolean              @default(false)
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
-  preferences SpaceModelPreference[]
+  id             String                 @id @default(cuid())
+  userId         String
+  user           User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider       String
+  label          String
+  secretId       String
+  supportsImages Boolean                @default(false)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  preferences    SpaceModelPreference[]
 
   @@unique([id, userId])
   @@index([userId, provider, updatedAt])
@@ -338,17 +338,17 @@ model UserVoiceCredential {
 }
 
 model SpaceModelPreference {
-  id           String              @id @default(cuid())
-  spaceId      String
-  userId       String
-  spaceMember  SpaceMember         @relation(fields: [spaceId, userId], references: [spaceId, userId], onDelete: Cascade)
-  credentialId String
-  credential   UserModelCredential @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
-  modelId      String?
+  id            String              @id @default(cuid())
+  spaceId       String
+  userId        String
+  spaceMember   SpaceMember         @relation(fields: [spaceId, userId], references: [spaceId, userId], onDelete: Cascade)
+  credentialId  String
+  credential    UserModelCredential @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
+  modelId       String?
   thinkingLevel String?
-  isDefault    Boolean             @default(false)
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
+  isDefault     Boolean             @default(false)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
   @@unique([spaceId, userId, credentialId])
   @@index([spaceId, userId, isDefault, updatedAt])
@@ -424,6 +424,7 @@ model Bot {
   computerSwitching        Boolean           @default(false)
   voiceId                  String?
   autoSpeak                Boolean           @default(false)
+  modelCredentialId        String?
   modelProvider            String?
   modelId                  String?
   thinkingLevel            String?
@@ -529,23 +530,23 @@ model ChatGroupMember {
 }
 
 model Thread {
-  id                          String     @id @default(cuid())
+  id                          String                @id @default(cuid())
   spaceId                     String
-  space                       Space      @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  botId                       String?    @unique
-  bot                         Bot?       @relation(fields: [botId], references: [id], onDelete: Cascade)
-  groupId                     String?    @unique
-  group                       ChatGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  externalConversationId      String?    @unique
+  space                       Space                 @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId                       String?               @unique
+  bot                         Bot?                  @relation(fields: [botId], references: [id], onDelete: Cascade)
+  groupId                     String?               @unique
+  group                       ChatGroup?            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  externalConversationId      String?               @unique
   externalConversation        ExternalConversation? @relation(fields: [externalConversationId], references: [id], onDelete: Cascade)
   userId                      String
-  createdAt                   DateTime   @default(now())
-  nextEventSeq                Int        @default(0)
-  nextMessageSeq              Int        @default(0)
+  createdAt                   DateTime              @default(now())
+  nextEventSeq                Int                   @default(0)
+  nextMessageSeq              Int                   @default(0)
   historyCompactedUpToSeq     Int?
-  historyCompactionSummary    String?    @db.Text
-  historyCompactionGeneration Int        @default(0)
-  unread                      Boolean    @default(false)
+  historyCompactionSummary    String?               @db.Text
+  historyCompactionGeneration Int                   @default(0)
+  unread                      Boolean               @default(false)
   messages                    Message[]
   events                      Event[]
   tasks                       Task[]
@@ -557,23 +558,23 @@ model Thread {
 }
 
 model Message {
-  id               String    @id @default(cuid())
-  threadId         String
-  thread           Thread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  seq              Int
-  role             String
-  blocks           Json
-  botId            String?
-  replyToMessageId String?
-  replyQuote       String?
-  replyTo          Message?  @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
-  replies          Message[] @relation("MessageReplies")
-  runId            String?
-  clientNonce      String?
+  id                    String            @id @default(cuid())
+  threadId              String
+  thread                Thread            @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  seq                   Int
+  role                  String
+  blocks                Json
+  botId                 String?
+  replyToMessageId      String?
+  replyQuote            String?
+  replyTo               Message?          @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies               Message[]         @relation("MessageReplies")
+  runId                 String?
+  clientNonce           String?
   sourceRuns            Run[]             @relation("RunSourceMessage")
-  externalTranscriptFor  ExternalMessage?
-  steeringMessages SteeringMessage[]
-  createdAt        DateTime  @default(now())
+  externalTranscriptFor ExternalMessage?
+  steeringMessages      SteeringMessage[]
+  createdAt             DateTime          @default(now())
 
   @@unique([threadId, seq])
   @@unique([threadId, clientNonce])
@@ -678,15 +679,15 @@ model TaskArtifact {
 }
 
 model Run {
-  id                   String           @id @default(cuid())
+  id                   String            @id @default(cuid())
   spaceId              String
-  space                Space            @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  space                Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   botId                String
-  bot                  Bot              @relation(fields: [botId], references: [id], onDelete: Cascade)
+  bot                  Bot               @relation(fields: [botId], references: [id], onDelete: Cascade)
   threadId             String
-  thread               Thread           @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  thread               Thread            @relation(fields: [threadId], references: [id], onDelete: Cascade)
   taskId               String
-  task                 Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task                 Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
   userId               String
   status               String
   trigger              String
@@ -695,26 +696,26 @@ model Run {
   thinkingLevel        String?
   // True when these columns are the model the run must keep. A later attempt
   // may record the model it used in the same columns without setting this.
-  modelPinned          Boolean          @default(false)
+  modelPinned          Boolean           @default(false)
   error                String?
   leaseOwner           String?
-  leaseFence           Int              @default(0)
+  leaseFence           Int               @default(0)
   leaseExpiresAt       DateTime?
   checkpoint           String?
   clientNonce          String?
   sourceMessageId      String?
-  sourceMessage        Message?         @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  sourceMessage        Message?          @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
   routineId            String?
-  routine              Routine?         @relation(fields: [routineId], references: [id], onDelete: SetNull)
+  routine              Routine?          @relation(fields: [routineId], references: [id], onDelete: SetNull)
   // The failed routine run this run retries. Unique, so a run is retried at most once.
-  retryOfRunId         String?          @unique
+  retryOfRunId         String?           @unique
   startedAt            DateTime?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
   messagingMirroredAt  DateTime?
   teamChatMirroredAt   DateTime?
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
   attempts             Attempt[]
   effects              ExternalEffect[]
   usageRecords         UsageRecord[]
@@ -735,22 +736,22 @@ model Run {
 }
 
 model SteeringMessage {
-  id        String   @id @default(cuid())
-  messageId String
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  botId     String
-  bot       Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
-  userId    String
-  runId     String?
-  run       Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+  id            String    @id @default(cuid())
+  messageId     String
+  message       Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  botId         String
+  bot           Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId        String
+  runId         String?
+  run           Run?      @relation(fields: [runId], references: [id], onDelete: SetNull)
   /// Set when a pending row must resume as this trigger so its reply can be delivered.
   originTrigger String?
   /// Model agreed for an inbound delivery that had to wait. Empty follows the bot.
   modelProvider String?
   modelId       String?
   thinkingLevel String?
-  claimedAt DateTime?
-  createdAt DateTime @default(now())
+  claimedAt     DateTime?
+  createdAt     DateTime  @default(now())
 
   @@unique([messageId, botId])
   @@index([botId, runId, createdAt])
@@ -775,8 +776,8 @@ model Attempt {
 // Deliberately independent of chat/user cascades: the worker must still be able
 // to cancel remote work after its originating chat or account is deleted.
 model CloudAgent {
-  id                  String   @id @default(uuid())
-  operationKey        String   @unique
+  id                  String    @id @default(uuid())
+  operationKey        String    @unique
   providerKey         String
   spaceId             String
   userId              String
@@ -786,23 +787,23 @@ model CloudAgent {
   remoteId            String?
   latestRunId         String?
   title               String
-  status              String   @default("running")
-  url                 String   @default("")
+  status              String    @default("running")
+  url                 String    @default("")
   branch              String?
   prUrl               String?
   launchRequest       Json
-  launchDispatched    Boolean  @default(false)
+  launchDispatched    Boolean   @default(false)
   followup            Json?
-  followupDispatching Boolean  @default(false)
-  cancelRequested     Boolean  @default(false)
-  generation          Int      @default(0)
-  wakeGeneration      Int      @default(-1)
-  version             Int      @default(0)
+  followupDispatching Boolean   @default(false)
+  cancelRequested     Boolean   @default(false)
+  generation          Int       @default(0)
+  wakeGeneration      Int       @default(-1)
+  version             Int       @default(0)
   leaseToken          String?
   leaseExpiresAt      DateTime?
   nextPollAt          DateTime? @default(now())
-  errorCount          Int      @default(0)
-  createdAt           DateTime @default(now())
+  errorCount          Int       @default(0)
+  createdAt           DateTime  @default(now())
 
   @@index([providerKey, nextPollAt])
   @@index([spaceId, userId, id])
@@ -832,35 +833,35 @@ model ExternalEffect {
 }
 
 model Routine {
-  id             String    @id @default(cuid())
-  spaceId        String
-  space          Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  botId          String
-  bot            Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
-  userId         String
-  threadId       String?
-  thread         Thread?   @relation(fields: [threadId], references: [id], onDelete: SetNull)
-  name           String
-  prompt         String
-  crons          String[]
-  timezone       String    @default("UTC")
-  active         Boolean   @default(false)
-  notify         Boolean   @default(true)
-  webhookEnabled Boolean   @default(false)
-  githubEnabled  Boolean   @default(false)
+  id              String    @id @default(cuid())
+  spaceId         String
+  space           Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId           String
+  bot             Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId          String
+  threadId        String?
+  thread          Thread?   @relation(fields: [threadId], references: [id], onDelete: SetNull)
+  name            String
+  prompt          String
+  crons           String[]
+  timezone        String    @default("UTC")
+  active          Boolean   @default(false)
+  notify          Boolean   @default(true)
+  webhookEnabled  Boolean   @default(false)
+  githubEnabled   Boolean   @default(false)
   messageProvider String?
-  modelProvider  String?
-  modelId        String?
-  thinkingLevel  String?
+  modelProvider   String?
+  modelId         String?
+  thinkingLevel   String?
   /// Change trigger (RoutineWatchSchema); null when the routine does not watch anything.
-  watch          Json?
+  watch           Json?
   /// Last check's result (RoutineWatchStateSchema), written by the checker.
-  watchState     Json?
-  lastRunAt      DateTime?
-  nextRunAt      DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  runs           Run[]
+  watchState      Json?
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  runs            Run[]
 
   @@index([active, nextRunAt])
   @@index([spaceId, botId])
@@ -1137,9 +1138,9 @@ model Artifact {
 }
 
 model UsageRecord {
-  id               String   @id @default(cuid())
-  spaceId          String
-  space            Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  id                 String   @id @default(cuid())
+  spaceId            String
+  space              Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   /// Which bot spent this. Deliberately NOT a relation: a usage row is spend that really
   /// happened, and no lifecycle event on the bot may delete it or blank its attribution.
   /// `Cascade` erased the row; `SetNull` would erase the attribution instead, and because
@@ -1148,31 +1149,31 @@ model UsageRecord {
   ///
   /// So the id outlives the bot and may dangle. Read it with a LEFT JOIN; `BotDeletion.id`
   /// IS the bot id, so a deleted bot's name is still reachable for display.
-  botId            String?
-  userId           String
-  runId            String?
-  run              Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
-  provider         String
-  model            String
+  botId              String?
+  userId             String
+  runId              String?
+  run                Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+  provider           String
+  model              String
   /// Uncached input; cache buckets are additional, reasoning is a subset of output.
-  inputTokens       Int?
-  outputTokens      Int?
-  cacheReadTokens   Int?
-  cacheWriteTokens  Int?
+  inputTokens        Int?
+  outputTokens       Int?
+  cacheReadTokens    Int?
+  cacheWriteTokens   Int?
   cacheWrite1hTokens Int?
-  reasoningTokens   Int?
-  totalTokens       Int?
-  costUsd           Float?
-  costSource        String?
-  pricingVersion    String?
-  usageSource       String?
-  callId            String? @unique
-  operationId       String?
-  operationKind     String  @default("answer")
+  reasoningTokens    Int?
+  totalTokens        Int?
+  costUsd            Float?
+  costSource         String?
+  pricingVersion     String?
+  usageSource        String?
+  callId             String?  @unique
+  operationId        String?
+  operationKind      String   @default("answer")
   /// Durable attribution, deliberately without lifecycle foreign keys.
-  parentRunId       String?
-  agentId           String?
-  createdAt         DateTime @default(now())
+  parentRunId        String?
+  agentId            String?
+  createdAt          DateTime @default(now())
 
   @@index([spaceId, userId, createdAt])
   @@map("usage_records")
@@ -1311,28 +1312,28 @@ model MessagingIdentity {
 }
 
 model MessagingChannel {
-  id            String              @id @default(cuid())
+  id            String                   @id @default(cuid())
   provider      String
   /// Opaque provider thread id of the group conversation.
-  threadId      String              @unique
+  threadId      String                   @unique
   name          String?
   introPostedAt DateTime?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
   members       MessagingChannelMember[]
 
   @@map("messaging_channels")
 }
 
 model MessagingChannelMember {
-  id         String      @id @default(cuid())
+  id         String           @id @default(cuid())
   channelId  String
   channel    MessagingChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
   address    String
   identityId String?
   status     String
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
 
   @@unique([channelId, address])
   @@index([identityId])
@@ -1409,25 +1410,25 @@ model BotSecret {
 }
 
 model ExternalConversation {
-  id                       String            @id @default(cuid())
-  provider                 String
-  workspaceId              String
-  externalKey              String
-  conversationId           String
-  displayName              String?
-  participantNames         String[]          @default([])
-  teamChatAmbientEnabled   Boolean?
-  teamChatRules            String?
-  automatedSenderPolicies  Json              @default("{}")
-  spaceId                  String
-  space                    Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  botId                    String
-  bot                      Bot               @relation(fields: [botId], references: [id], onDelete: Cascade)
-  userId                   String
-  thread                   Thread?
-  messages                 ExternalMessage[]
-  createdAt                DateTime          @default(now())
-  updatedAt                DateTime          @updatedAt
+  id                      String            @id @default(cuid())
+  provider                String
+  workspaceId             String
+  externalKey             String
+  conversationId          String
+  displayName             String?
+  participantNames        String[]          @default([])
+  teamChatAmbientEnabled  Boolean?
+  teamChatRules           String?
+  automatedSenderPolicies Json              @default("{}")
+  spaceId                 String
+  space                   Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId                   String
+  bot                     Bot               @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId                  String
+  thread                  Thread?
+  messages                ExternalMessage[]
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
 
   @@unique([provider, workspaceId, externalKey])
   @@index([spaceId, botId])
@@ -1435,31 +1436,31 @@ model ExternalConversation {
 }
 
 model ExternalMessage {
-  id                     String                @id @default(cuid())
+  id                     String               @id @default(cuid())
   externalConversationId String
-  externalConversation   ExternalConversation  @relation(fields: [externalConversationId], references: [id], onDelete: Cascade)
+  externalConversation   ExternalConversation @relation(fields: [externalConversationId], references: [id], onDelete: Cascade)
   providerEventId        String
-  kind                   String                @default("direct")
+  kind                   String               @default("direct")
   senderId               String
   senderName             String
-  senderIsBot            Boolean               @default(false)
+  senderIsBot            Boolean              @default(false)
   content                String
   replyThreadId          String?
   batchContext           String?
   engagementReason       String?
   judgedAt               DateTime?
-  status                 String                @default("received")
-  runId                  String?               @unique
-  run                    Run?                  @relation(fields: [runId], references: [id], onDelete: SetNull)
-  threadMessageId        String?               @unique
-  threadMessage          Message?              @relation(fields: [threadMessageId], references: [id], onDelete: SetNull)
-  attempts               Int                   @default(0)
+  status                 String               @default("received")
+  runId                  String?              @unique
+  run                    Run?                 @relation(fields: [runId], references: [id], onDelete: SetNull)
+  threadMessageId        String?              @unique
+  threadMessage          Message?             @relation(fields: [threadMessageId], references: [id], onDelete: SetNull)
+  attempts               Int                  @default(0)
   nextAttemptAt          DateTime?
   lastError              String?
   providerReplyHandle    String?
   deliveredAt            DateTime?
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
 
   @@unique([externalConversationId, providerEventId])
   @@index([status, nextAttemptAt])
@@ -1485,7 +1486,7 @@ model AgentSecret {
 
 // Deployment-owned integration credentials; never exposed through read DTOs.
 model IntegrationProviderConfig {
-  id         String @id
+  id         String   @id
   ciphertext String
   updatedAt  DateTime @updatedAt
 
@@ -1507,25 +1508,25 @@ model Board {
 }
 
 model Ticket {
-  id              String    @id @default(cuid())
+  id              String          @id @default(cuid())
   boardId         String
-  board           Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  board           Board           @relation(fields: [boardId], references: [id], onDelete: Cascade)
   spaceId         String
-  space           Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  space           Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   number          Int
   title           String
   description     String?
-  status          String    @default("todo")
+  status          String          @default("todo")
   priority        String?
   assigneeBotId   String?
-  assigneeBot     Bot?      @relation("TicketAssigneeBot", fields: [assigneeBotId], references: [id], onDelete: SetNull)
+  assigneeBot     Bot?            @relation("TicketAssigneeBot", fields: [assigneeBotId], references: [id], onDelete: SetNull)
   createdByBotId  String?
-  createdByBot    Bot?      @relation("TicketCreatorBot", fields: [createdByBotId], references: [id], onDelete: SetNull)
+  createdByBot    Bot?            @relation("TicketCreatorBot", fields: [createdByBotId], references: [id], onDelete: SetNull)
   createdByUserId String?
-  createdByUser   User?     @relation("TicketCreatorUser", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  completedAt       DateTime?
+  createdByUser   User?           @relation("TicketCreatorUser", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  completedAt     DateTime?
   comments        TicketComment[]
 
   @@unique([boardId, number])

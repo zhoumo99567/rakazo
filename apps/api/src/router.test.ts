@@ -2318,6 +2318,44 @@ describe("model credential persistence", () => {
     return response;
   }
 
+  it("creates a separate compatible connection without reading or replacing the previous key", async () => {
+    const { deps, handler } = persistDeps();
+    vi.mocked(deps.prisma.userModelCredential.findFirst).mockResolvedValue({
+      id: "existing",
+    } as never);
+    const response = await call(handler, "models/connect", {
+      provider: "openai-compatible",
+      createNew: true,
+      baseUrl: "http://127.0.0.1:8082/v1",
+      apiKey: "fake-key-b",
+      modelId: "shared-model",
+      label: "Endpoint B",
+    });
+    expect(response.status, await response.text()).toBe(200);
+    expect(deps.prisma.userModelCredential.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ label: "Endpoint B" }) }),
+    );
+    const serialized = vi.mocked(deps.secrets.put).mock.calls[0]?.[0];
+    expect(JSON.parse(String(serialized))).toMatchObject({
+      baseUrl: "http://127.0.0.1:8082/v1",
+      apiKey: "fake-key-b",
+    });
+  });
+
+  it("rejects editing an inaccessible connection instead of replacing a different one", async () => {
+    const { deps, handler } = persistDeps();
+    const response = await call(handler, "models/connect", {
+      provider: "openai-compatible",
+      credentialId: "foreign",
+      baseUrl: "http://127.0.0.1:8082/v1",
+      apiKey: "fake-key-b",
+      modelId: "shared-model",
+    });
+    expect(response.status).toBe(400);
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+    expect(deps.prisma.userModelCredential.create).not.toHaveBeenCalled();
+  });
+
   it("does not persist a stringified null model id from subscription sign-in", async () => {
     const { upsert, finish, handler } = persistDeps();
     finish.mockImplementation(async (_loginId, _actor, persist) => ({
@@ -4649,6 +4687,42 @@ describe("openai-compatible enabled models", () => {
 
     expect(result).toEqual({ status: 400, message: "Unknown model for that provider" });
     expect(prisma.spaceModelPreference.upsert).not.toHaveBeenCalled();
+  });
+
+  it("sets an explicitly selected connection when identical model names have different reasoning support", async () => {
+    const { call, prisma } = fixture({
+      plaintext: secretText(["m-a"], false),
+      alternatePlaintext: secretText(["m-a"], true),
+      defaultModel: "m-a",
+    });
+    const all = await prisma.userModelCredential.findMany({ where: { provider: compatible } });
+    const alternate = all.find((row) => row.id === "cred-alternate")!;
+    prisma.userModelCredential.findFirst.mockImplementation(
+      async ({ where }) => all.find((row) => row.id === (where as { id?: string }).id) ?? null,
+    );
+    prisma.userModelCredential.findMany.mockResolvedValue([alternate]);
+    prisma.spaceModelPreference.findMany.mockResolvedValue([]);
+    prisma.spaceModelPreference.findFirst.mockResolvedValue(null);
+    expect(
+      await call("models/setDefault", {
+        provider: compatible,
+        modelId: "m-a",
+        credentialId: "cred-alternate",
+        thinkingLevel: "high",
+      }),
+    ).toMatchObject({ status: 200 });
+    expect(prisma.spaceModelPreference.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          spaceId_userId_credentialId: {
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            credentialId: "cred-alternate",
+          },
+        },
+        update: expect.objectContaining({ modelId: "m-a", thinkingLevel: "high" }),
+      }),
+    );
   });
 
   it("switches A to B to A within the list while a bot pins B", async () => {

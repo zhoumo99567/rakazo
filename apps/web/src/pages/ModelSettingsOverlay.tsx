@@ -101,6 +101,8 @@ export function ModelSettingsOverlay({
   const [credentials, setCredentials] = useState<ModelCredential[]>([]);
   const [me, setMe] = useState<Me | null>(null);
   const [provider, setProvider] = useState("");
+  const [connectionId, setConnectionId] = useState<string | null>(null);
+  const [connectionName, setConnectionName] = useState("");
   // The provider whose optional personal-key form is open.
   const [ownKeyProvider, setOwnKeyProvider] = useState<string | null>(null);
   const [providerQuery, setProviderQuery] = useState("");
@@ -158,7 +160,7 @@ export function ModelSettingsOverlay({
     },
   });
 
-  async function refresh() {
+  async function refresh(preferredConnectionId?: string) {
     const refreshRevision = ++refreshRevisionRef.current;
     const selectionRevision = selectionRevisionRef.current;
     const [nextCatalog, nextCredentials, nextMe] = await Promise.all([
@@ -171,7 +173,13 @@ export function ModelSettingsOverlay({
       provider && nextCatalog.some((entry) => entry.provider === provider)
         ? provider
         : (nextMe.defaultProvider ?? nextCatalog[0]?.provider ?? "");
-    const nextCredential = nextCredentials.find((entry) => entry.provider === nextProvider);
+    const selectedConnectionId = preferredConnectionId ?? connectionId;
+    const nextCredential =
+      nextCredentials.find(
+        (entry) => entry.provider === nextProvider && entry.id === selectedConnectionId,
+      ) ??
+      nextCredentials.find((entry) => entry.provider === nextProvider && entry.isDefault) ??
+      nextCredentials.find((entry) => entry.provider === nextProvider);
     const nextModel =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ??
@@ -191,6 +199,8 @@ export function ModelSettingsOverlay({
       invalidatePreflight();
       resetOpenAiCompatibleProbe();
       setProvider(nextProvider);
+      setConnectionId(nextCredential?.id ?? null);
+      setConnectionName(nextCredential?.label ?? "");
       setModelId(nextModel);
       setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
       if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -314,12 +324,20 @@ export function ModelSettingsOverlay({
   const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
   const cloudflareRoutingReady =
     !isCloudflareGateway || cloudflareGatewayRouting({ accountId, gatewayId }) !== undefined;
-  const credential = credentials.find((entry) => entry.provider === provider);
+  const credential = credentials.find(
+    (entry) =>
+      entry.provider === provider &&
+      (provider !== OPENAI_COMPATIBLE_PROVIDER_ID ||
+        (connectionId === null ? true : entry.id === connectionId)),
+  );
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
   const activeCredential = credentials.find(
-    (entry) => entry.provider === me?.defaultProvider && entry.modelId === me?.defaultModel,
+    (entry) =>
+      entry.isDefault &&
+      entry.provider === me?.defaultProvider &&
+      entry.modelId === me?.defaultModel,
   );
   // The banner shows the effective effort — stored level or the runtime
   // default — only when the active model can actually think.
@@ -329,6 +347,7 @@ export function ModelSettingsOverlay({
       ? thinkingLevelLabel(activeCredential?.thinkingLevel ?? "medium")
       : null;
   const isActive =
+    (!isOpenAiCompatible || credential?.isDefault === true) &&
     me?.defaultProvider === selected?.provider &&
     me?.defaultModel === (isOpenAiCompatible ? modelId.trim() : selected?.id);
   // Space still bills the host while this provider matches; model id alone is not credentials.
@@ -405,10 +424,16 @@ export function ModelSettingsOverlay({
     );
   }
 
-  function chooseProvider(nextProvider: string) {
+  function chooseProvider(nextProvider: string, selectedConnectionId?: string) {
     cancelOAuthAttempt();
     selectionRevisionRef.current += 1;
-    const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
+    const nextCredential = credentials.find(
+      (entry) =>
+        entry.provider === nextProvider &&
+        (selectedConnectionId === undefined || entry.id === selectedConnectionId),
+    );
+    setConnectionId(nextCredential?.id ?? "");
+    setConnectionName(nextCredential?.label ?? "");
     const nextModelId =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ?? "")
@@ -547,6 +572,7 @@ export function ModelSettingsOverlay({
     setPending("default");
     try {
       await rpc.models.setDefault({
+        credentialId: isOpenAiCompatible ? credential.id : undefined,
         provider: selected.provider,
         modelId: activeModelId,
         // Catalog connections keep the space default effort on the preference;
@@ -630,10 +656,12 @@ export function ModelSettingsOverlay({
     setNotice(null);
     setPending(settingsOnly ? "settings" : "connect");
     try {
-      await rpc.models.connect(
+      const saved = await rpc.models.connect(
         isOpenAiCompatible
           ? {
               provider: selected.provider,
+              credentialId: credential?.id,
+              createNew: !credential,
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
               // The server adds the default itself.
@@ -645,7 +673,7 @@ export function ModelSettingsOverlay({
               supportsImages,
               maxImagesPerPrompt: maxImagesPerPromptInput,
               apiKey: apiKey.trim() || undefined,
-              label: selected.providerName ?? selected.provider,
+              label: connectionName.trim() || selected.providerName || selected.provider,
             }
           : {
               provider: selected.provider,
@@ -665,7 +693,7 @@ export function ModelSettingsOverlay({
             },
       );
       if (!settingsOnly) setApiKey("");
-      await refresh();
+      await refresh(saved.id);
       detailScrollRef.current?.scrollTo({ top: 0 });
       // A fresh connection speaks for itself through the Active model row.
       if (isOpenAiCompatible || savingLimitOnly) setNotice(t`Saved.`);
@@ -683,7 +711,10 @@ export function ModelSettingsOverlay({
     setNotice(null);
     setPending("disconnect");
     try {
-      await rpc.models.disconnect({ provider: selected.provider });
+      await rpc.models.disconnect({
+        provider: selected.provider,
+        credentialId: isOpenAiCompatible ? credential.id : undefined,
+      });
       setApiKey("");
       setThinkingLevel(null);
       await refresh();
@@ -1286,6 +1317,35 @@ export function ModelSettingsOverlay({
             <>
               {isOpenAiCompatible ? (
                 <div className="block text-[13.5px] text-muted-foreground">
+                  <label className="block mb-4" htmlFor="model-connection">
+                    <Trans>Connection</Trans>
+                    <NativeSelect
+                      id="model-connection"
+                      value={credential?.id ?? ""}
+                      className="mt-2 w-full"
+                      onChange={(event) =>
+                        chooseProvider(OPENAI_COMPATIBLE_PROVIDER_ID, event.target.value)
+                      }
+                    >
+                      <NativeSelectOption value="">{t`New connection`}</NativeSelectOption>
+                      {credentials
+                        .filter((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID)
+                        .map((entry) => (
+                          <NativeSelectOption key={entry.id} value={entry.id}>
+                            {entry.label}
+                          </NativeSelectOption>
+                        ))}
+                    </NativeSelect>
+                  </label>
+                  <label className="block mb-4" htmlFor="model-connection-name">
+                    <Trans>Connection name</Trans>
+                    <Input
+                      id="model-connection-name"
+                      className="mt-2"
+                      value={connectionName}
+                      onChange={(event) => setConnectionName(event.target.value)}
+                    />
+                  </label>
                   <label className="block" htmlFor="model-base-url">
                     <Trans>Server URL</Trans>
                     <Input

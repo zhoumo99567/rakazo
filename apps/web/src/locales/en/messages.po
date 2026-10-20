@@ -1352,6 +1352,14 @@ msgstr "Connected. Its tools are available from your next message."
 msgid "Connecting…"
 msgstr "Connecting…"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection"
+msgstr "Connection"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection name"
+msgstr "Connection name"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Connection test failed."
 msgstr "Connection test failed."
@@ -3089,6 +3097,10 @@ msgstr "Model \"{modelId}\" was not listed."
 msgid "Model id"
 msgstr "Model id"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Model ID"
+msgstr "Model ID"
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Model options"
 msgstr "Model options"
@@ -3202,6 +3214,10 @@ msgstr "Needs you"
 #: src/pages/shell/bot-panel.tsx
 msgid "New bot"
 msgstr "New bot"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "New connection"
+msgstr "New connection"
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"

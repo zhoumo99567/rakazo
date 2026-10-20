@@ -101,6 +101,7 @@ export const BotSchema = z.object({
   createdAt: z.string(),
   voiceId: z.string().nullable(),
   autoSpeak: z.boolean(),
+  modelCredentialId: Id.nullable().optional(),
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   thinkingLevel: ThinkingLevelSchema.nullable(),
@@ -388,6 +389,7 @@ export const UpdateBotInput = z
     sectionId: Id.nullable().optional(),
     voiceId: z.string().max(120).nullable().optional(),
     autoSpeak: z.boolean().optional(),
+    modelCredentialId: Id.nullable().optional(),
     modelProvider: z.string().trim().min(1).max(80).nullable().optional(),
     modelId: z.string().trim().min(1).max(200).nullable().optional(),
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
@@ -398,6 +400,20 @@ export const UpdateBotInput = z
     disabledBuiltinTools: DisabledBuiltinToolsSchema.optional(),
   })
   .superRefine((value, ctx) => {
+    if (value.modelCredentialId !== undefined && value.modelProvider === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Select a provider and model with the connection",
+        path: ["modelCredentialId"],
+      });
+    }
+    if (value.modelCredentialId && !value.modelProvider) {
+      ctx.addIssue({
+        code: "custom",
+        message: "A connection requires a model",
+        path: ["modelCredentialId"],
+      });
+    }
     const providerProvided = value.modelProvider !== undefined;
     const modelProvided = value.modelId !== undefined;
     if (!providerProvided && !modelProvided) return;
@@ -1143,6 +1159,8 @@ export const MAX_ENABLED_MODEL_IDS = 500;
 
 export const ModelConnectInputSchema = z
   .object({
+    credentialId: Id.optional(),
+    createNew: z.boolean().optional(),
     ...ModelContextLimitsSchema.shape,
     provider: z.string(),
     apiKey: z.string().optional(),
@@ -1162,6 +1180,16 @@ export const ModelConnectInputSchema = z
       .optional(),
   })
   .superRefine((value, ctx) => {
+    if (
+      value.createNew &&
+      (value.credentialId || value.provider !== OPENAI_COMPATIBLE_PROVIDER_ID)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "New connections require OpenAI-compatible and no existing connection ID",
+        path: ["createNew"],
+      });
+    }
     if (!modelOutputLeavesInputRoom(value.maxTokens, value.contextWindow)) {
       ctx.addIssue({
         code: "custom",

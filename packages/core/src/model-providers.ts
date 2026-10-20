@@ -146,6 +146,7 @@ export type ConnectedModelChoice = {
   key: string;
   provider: string;
   modelId: string;
+  credentialId?: string;
   label: string;
 };
 
@@ -158,6 +159,7 @@ type CatalogModelRef = {
 };
 
 type CredentialModelRef = {
+  id?: string;
   provider: string;
   label: string;
   modelId?: string | null;
@@ -181,11 +183,35 @@ function canonicalApiModelId(provider: string, modelId: string): string | undefi
   return canonical;
 }
 
-export function modelOptionKey(provider: string, modelId: string): string {
-  return `${canonicalPiProviderId(provider)}::${modelId}`;
+export function modelOptionKey(
+  provider: string,
+  modelId: string,
+  credentialId?: string | null,
+): string {
+  return credentialId
+    ? JSON.stringify([canonicalPiProviderId(provider), modelId, credentialId])
+    : `${canonicalPiProviderId(provider)}::${modelId}`;
 }
 
-export function parseModelOptionKey(key: string): { provider: string; modelId: string } | null {
+export function parseModelOptionKey(
+  key: string,
+): { provider: string; modelId: string; credentialId?: string } | null {
+  if (key.startsWith("[")) {
+    try {
+      const value: unknown = JSON.parse(key);
+      if (
+        Array.isArray(value) &&
+        value.length === 3 &&
+        value.every((item) => typeof item === "string") &&
+        value[0] &&
+        value[2]
+      )
+        return { provider: value[0], modelId: value[1]!, credentialId: value[2] };
+    } catch {
+      /* Invalid picker value. */
+    }
+    return null;
+  }
   const separator = key.indexOf("::");
   if (separator <= 0) return null;
   return {
@@ -224,20 +250,29 @@ export function resolveSelectableModelId(
   return trimmed;
 }
 
-function freeFormChoice(credential: CredentialModelRef, modelId: string): ConnectedModelChoice {
+function freeFormChoice(
+  credential: CredentialModelRef,
+  modelId: string,
+  credentialId?: string,
+): ConnectedModelChoice {
   return {
-    key: modelOptionKey(credential.provider, modelId),
+    key: modelOptionKey(credential.provider, modelId, credentialId),
+    ...(credentialId ? { credentialId } : {}),
     provider: credential.provider,
     modelId,
     label: `${credential.label} · ${modelId}`,
   };
 }
 
-function catalogChoices(providerModels: readonly CatalogModelRef[]): ConnectedModelChoice[] {
+function catalogChoices(
+  providerModels: readonly CatalogModelRef[],
+  credentialId?: string,
+): ConnectedModelChoice[] {
   return providerModels.map((entry) => {
     const modelId = resolveSelectableModelId(providerModels, entry.provider, entry.id);
     return {
-      key: modelOptionKey(entry.provider, modelId),
+      key: modelOptionKey(entry.provider, modelId, credentialId),
+      ...(credentialId ? { credentialId } : {}),
       provider: entry.provider,
       modelId,
       label: `${entry.providerName ?? entry.provider} · ${entry.label}`,
@@ -250,8 +285,15 @@ export function credentialForModel<C extends CredentialModelRef>(
   credentials: readonly C[],
   provider: string | null | undefined,
   modelId: string | null | undefined,
+  credentialId?: string | null,
 ): C | undefined {
   if (!provider || !modelId) return undefined;
+  if (credentialId)
+    return credentials.find(
+      (credential) =>
+        credential.id === credentialId &&
+        canonicalPiProviderId(credential.provider) === canonicalPiProviderId(provider),
+    );
   const candidates = credentials.filter((credential) => credential.provider === provider);
   const preferences = [...candidates].sort(
     (left, right) =>
@@ -291,10 +333,13 @@ export function credentialForModel<C extends CredentialModelRef>(
 export function connectedModelChoices(
   credentials: readonly CredentialModelRef[],
   catalog: readonly CatalogModelRef[],
+  bindConnections = false,
 ): ConnectedModelChoice[] {
   const choices: ConnectedModelChoice[] = [];
   const seen = new Set<string>();
   for (const credential of credentials) {
+    const credentialId =
+      bindConnections && credential.provider === "openai-compatible" ? credential.id : undefined;
     const providerModels = catalog.filter(
       (entry) =>
         canonicalPiProviderId(entry.provider) === canonicalPiProviderId(credential.provider) &&
@@ -308,10 +353,10 @@ export function connectedModelChoices(
     const enabled = (credential.enabledModelIds ?? []).map((id) => id.trim()).filter(Boolean);
     const next: ConnectedModelChoice[] =
       enabled.length > 0
-        ? enabled.map((id) => freeFormChoice(credential, id))
+        ? enabled.map((id) => freeFormChoice(credential, id, credentialId))
         : raw && !resolvedInCatalog
-          ? [freeFormChoice(credential, resolved || raw)]
-          : catalogChoices(providerModels);
+          ? [freeFormChoice(credential, resolved || raw, credentialId)]
+          : catalogChoices(providerModels, credentialId);
     for (const choice of next) {
       if (seen.has(choice.key)) continue;
       seen.add(choice.key);

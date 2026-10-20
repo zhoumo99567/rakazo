@@ -271,7 +271,25 @@ export async function findModelCredential(
   scope: ModelCredentialScope,
   provider: string,
   modelId?: string | null,
+  credentialId?: string | null,
 ) {
+  if (credentialId) {
+    const credential = await prisma.userModelCredential.findFirst({
+      where: {
+        id: credentialId,
+        userId: scope.userId,
+        provider: modelCredentialProviderFilter(provider),
+      },
+    });
+    if (!credential) return null;
+    const preference = await prisma.spaceModelPreference.findFirst({
+      where: { spaceId: scope.spaceId, userId: scope.userId, credentialId },
+      include: { credential: true },
+    });
+    return preference
+      ? withModelPreference(preference)
+      : { ...credential, isDefault: false, defaultModel: null, thinkingLevel: null };
+  }
   if (
     typeof prisma.spaceModelPreference.findMany === "function" &&
     typeof prisma.userModelCredential.findMany === "function"

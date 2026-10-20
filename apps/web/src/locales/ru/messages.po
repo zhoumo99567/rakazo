@@ -1352,6 +1352,14 @@ msgstr "Подключено. Его инструменты доступны и�
 msgid "Connecting…"
 msgstr "Подключение…"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection"
+msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection name"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Connection test failed."
 msgstr "Тест соединения не удался."
@@ -3089,6 +3097,10 @@ msgstr "Модель \"{modelId}\" отсутствует в списке."
 msgid "Model id"
 msgstr "Идентификатор модели"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Model ID"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Model options"
 msgstr "Варианты модели"
@@ -3202,6 +3214,10 @@ msgstr "Требуется ваше участие"
 #: src/pages/shell/bot-panel.tsx
 msgid "New bot"
 msgstr "Новый бот"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "New connection"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"

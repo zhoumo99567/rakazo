@@ -382,6 +382,8 @@ async function loadModelSecret(
 }
 
 export type ConnectedModelResolution = {
+  /** Explicit selections must never fall back to another endpoint. */
+  credentialId?: string | null;
   /** Preview a connection save using the same runtime selection. */
   replacement?: { credentialId: string; secret: StoredModelSecret; defaultModel?: string | null };
 };
@@ -395,7 +397,13 @@ export async function findConnectedModelCredential(
   modelId?: string | null,
   resolution: ConnectedModelResolution = {},
 ): Promise<ModelCredential> {
-  let selected = await findModelCredential(prisma, actor, provider, modelId);
+  let selected = await findModelCredential(
+    prisma,
+    actor,
+    provider,
+    modelId,
+    resolution.credentialId,
+  );
   const replacement = resolution.replacement;
   if (
     selected &&
@@ -409,7 +417,8 @@ export async function findConnectedModelCredential(
       ? Promise.resolve(replacement.secret)
       : loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);
   const id = usableModelId(modelId);
-  if (!selected || provider !== OPENAI_COMPATIBLE_PROVIDER_ID || !id) return selected;
+  if (!selected || resolution.credentialId || provider !== OPENAI_COMPATIBLE_PROVIDER_ID || !id)
+    return selected;
   if (selected.defaultModel === id) return selected;
   const secret = await readSecret(selected);
   const preferred = {
@@ -464,13 +473,18 @@ export async function validateBotModelChange(
     spaceId: string;
     provider: string | null;
     model: string | null;
+    credentialId?: string | null;
     thinkingLevel?: string | null;
-    current?: { provider: string | null; model: string | null };
+    current?: { provider: string | null; model: string | null; credentialId?: string | null };
   },
 ): Promise<BotModelChangeResult> {
   const scope = { userId: input.userId, spaceId: input.spaceId };
   const { provider, model } = input;
-  const changing = provider !== input.current?.provider || model !== input.current?.model;
+  const changing =
+    provider !== input.current?.provider ||
+    model !== input.current?.model ||
+    (input.credentialId ?? null) !== (input.current?.credentialId ?? null);
+  const resolution = { credentialId: input.credentialId };
   if (changing && provider && model) {
     const credential = await findConnectedModelCredential(
       deps.prisma,
@@ -478,6 +492,7 @@ export async function validateBotModelChange(
       scope,
       provider,
       model,
+      resolution,
     );
     if (!credential) return { ok: false, error: "Connect that model provider first" };
     const inCatalog = isCatalogModelChoice(provider, model);
@@ -488,6 +503,7 @@ export async function validateBotModelChange(
         scope,
         provider,
         model,
+        resolution,
       );
       if (error) return { ok: false, error };
     } else if (!inCatalog && credential.defaultModel !== model) {
@@ -520,6 +536,7 @@ export async function validateBotModelChange(
         scope,
         effectiveProvider,
         effectiveModelId,
+        resolution,
       );
       if (allowed && !allowed.includes(thinkingLevel)) {
         return { ok: false, error: `Thinking level must be one of: ${allowed.join(", ")}` };
@@ -641,6 +658,7 @@ export async function validateConnectedModelChoice(
       spaceId: actor.spaceId,
       userId: actor.userId,
       modelId,
+      ...(resolution.credentialId ? { credentialId: resolution.credentialId } : {}),
       credential: { userId: actor.userId, provider },
     },
     select: { id: true },
@@ -654,6 +672,7 @@ export async function validateConnectedModelChoice(
 }
 
 export type ModelChoice = {
+  modelCredentialId?: string | null;
   modelProvider: string | null;
   modelId: string | null;
   thinkingLevel: string | null;
@@ -676,6 +695,7 @@ export function runModelChoice(
     };
   }
   return {
+    ...(bot.modelCredentialId ? { modelCredentialId: bot.modelCredentialId } : {}),
     modelProvider: bot.modelProvider,
     modelId: bot.modelId,
     thinkingLevel: bot.thinkingLevel,
@@ -728,6 +748,7 @@ export function pinnedModelCredentialError(
   const modelId = usableModelId(choice.modelId);
   if (
     modelId &&
+    !(choice.modelCredentialId && choice.modelProvider === OPENAI_COMPATIBLE_PROVIDER_ID) &&
     !isCatalogModelChoice(choice.modelProvider, modelId) &&
     credential.defaultModel !== modelId
   ) {

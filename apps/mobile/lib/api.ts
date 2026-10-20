@@ -961,6 +961,7 @@ export type MobileBot = Pick<
   | "unread"
   | "updatedAt"
   | "computerMode"
+  | "modelCredentialId"
   | "modelProvider"
   | "modelId"
   | "thinkingLevel"

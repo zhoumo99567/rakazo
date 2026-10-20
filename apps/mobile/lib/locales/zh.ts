@@ -645,6 +645,10 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Configure a plugin catalog on the server to connect apps.":
     "在服务器上配置插件目录即可连接应用。",
   "Connected {name}.": "已连接 {name}。",
+  Connection: "连接",
+  "New connection": "新建连接",
+  "Connection name": "连接名称",
+  "Model ID": "模型 ID",
   "Connection pending": "连接待完成",
   Created: "已创建",
   deleted: "已删除",

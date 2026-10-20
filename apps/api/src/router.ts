@@ -159,7 +159,6 @@ import {
   isDeletableMemoryDocument,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   parseTicketRef,
-  storedPiProviderIds,
   usableModelId,
 } from "@rakazo/contracts";
 import {
@@ -1297,7 +1296,16 @@ export function createRouter(deps: RouterDeps) {
         try {
           let previousPlaintext: string | undefined;
           let omitVisionModelIds = false;
-          const credential = await findModelCredential(deps.prisma, context.actor, input.provider);
+          const credential = input.createNew
+            ? null
+            : await findModelCredential(
+                deps.prisma,
+                context.actor,
+                input.provider,
+                undefined,
+                input.credentialId,
+              );
+          if (input.credentialId && !credential) throw new Error("Model connection not found");
           if (credential) {
             const secret = await deps.prisma.secret.findFirst({
               where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
@@ -1327,20 +1335,28 @@ export function createRouter(deps: RouterDeps) {
             message: error instanceof Error ? error.message : "Invalid model connection",
           });
         }
-        if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+        if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID && !input.createNew) {
           // Limits: this runs before persistModelCredential's transaction. A pin saved in
           // between can fall outside the stored list and then fails at run time with
           // "Unknown model for that provider". Closing it needs every pin write (bots,
           // routines, backups) serializable. Concurrent saves of the same connection are
           // last-write-wins, as before this list existed, so one save's ticks can be dropped.
           const saved = parseModelSecret(plaintext);
-          await assertNoDanglingModelPins(deps, context.actor, saved, input.modelId ?? "");
+          await assertNoDanglingModelPins(
+            deps,
+            context.actor,
+            saved,
+            input.modelId ?? "",
+            input.credentialId,
+          );
         }
         return persistModelCredential(
           deps,
           context.actor,
           {
             provider: input.provider,
+            credentialId: input.credentialId,
+            createNew: input.createNew,
             plaintext,
             label: input.label,
             modelId: input.modelId,
@@ -1490,7 +1506,10 @@ export function createRouter(deps: RouterDeps) {
               where: {
                 spaceId: context.actor.spaceId,
                 userId: context.actor.userId,
-                credential: { provider: modelCredentialProviderFilter(input.provider) },
+                credential: {
+                  provider: modelCredentialProviderFilter(input.provider),
+                  ...(input.credentialId ? { id: input.credentialId } : {}),
+                },
               },
               include: { credential: true },
             }),
@@ -1498,6 +1517,7 @@ export function createRouter(deps: RouterDeps) {
               where: {
                 userId: context.actor.userId,
                 provider: modelCredentialProviderFilter(input.provider),
+                ...(input.credentialId ? { id: input.credentialId } : {}),
               },
             }),
           ]);
@@ -1557,10 +1577,17 @@ export function createRouter(deps: RouterDeps) {
                   context.actor,
                   input.provider,
                   input.modelId,
+                  input.credentialId,
                 )
               : { allowed: undefined, secret: undefined };
           if (compatible) {
-            await assertCompatibleDefaultChange(deps, context.actor, input.modelId, thinking);
+            await assertCompatibleDefaultChange(
+              deps,
+              context.actor,
+              input.modelId,
+              thinking,
+              input.credentialId,
+            );
           }
           return deps.prisma.$transaction(
             async (tx) => {
@@ -1666,16 +1693,15 @@ export function createRouter(deps: RouterDeps) {
         await withSerializableRetry(() =>
           deps.prisma.$transaction(
             async (tx) => {
-              await tx.spaceBackupModel.deleteMany({
-                where: {
-                  userId: context.actor.userId,
-                  provider: modelCredentialProviderFilter(input.provider),
-                },
-              });
+              if (!input.credentialId)
+                await tx.spaceBackupModel.deleteMany({
+                  where: { userId: context.actor.userId, provider: input.provider },
+                });
               const existing = await tx.userModelCredential.findMany({
                 where: {
                   userId: context.actor.userId,
                   provider: modelCredentialProviderFilter(input.provider),
+                  ...(input.credentialId ? { id: input.credentialId } : {}),
                 },
               });
               if (existing.length === 0) return;
@@ -1735,6 +1761,7 @@ export function createRouter(deps: RouterDeps) {
             instructions: source.instructions,
             notifyOnFinish: source.notifyOnFinish,
             color: source.color,
+            modelCredentialId: source.modelCredentialId,
             computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
             modelProvider: source.modelProvider,
             modelId: source.modelId,
@@ -1782,6 +1809,12 @@ export function createRouter(deps: RouterDeps) {
           });
           if (!section) throw new IsolationError();
         }
+        const modelCredentialId =
+          input.modelCredentialId !== undefined
+            ? input.modelCredentialId
+            : input.modelProvider === undefined || input.modelProvider === existing.modelProvider
+              ? existing.modelCredentialId
+              : null;
         const modelChange = await validateBotModelChange(
           {
             prisma: deps.prisma,
@@ -1800,7 +1833,12 @@ export function createRouter(deps: RouterDeps) {
               input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider,
             model: input.modelId !== undefined ? input.modelId : existing.modelId,
             thinkingLevel: input.thinkingLevel,
-            current: { provider: existing.modelProvider, model: existing.modelId },
+            credentialId: modelCredentialId,
+            current: {
+              provider: existing.modelProvider,
+              model: existing.modelId,
+              credentialId: existing.modelCredentialId,
+            },
           },
         );
         if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
@@ -1828,7 +1866,17 @@ export function createRouter(deps: RouterDeps) {
             voiceId: input.voiceId,
             autoSpeak: input.autoSpeak,
             ...(input.modelProvider !== undefined
-              ? { modelProvider: input.modelProvider, modelId: input.modelId ?? null }
+              ? {
+                  modelProvider: input.modelProvider,
+                  modelId: input.modelId ?? null,
+                  modelCredentialId: input.modelProvider
+                    ? input.modelCredentialId !== undefined
+                      ? input.modelCredentialId
+                      : input.modelProvider === existing.modelProvider
+                        ? existing.modelCredentialId
+                        : null
+                    : null,
+                }
               : {}),
             ...(input.thinkingLevel !== undefined ? { thinkingLevel } : {}),
             ...(input.teamChatAmbientEnabled !== undefined
@@ -6674,12 +6722,14 @@ function prepareAllowedThinkingLevels(
   actor: Actor,
   provider: string,
   modelId: string,
+  credentialId?: string,
 ) {
   return prepareModelThinkingLevels(
     { prisma: deps.prisma, secretStore: deps.secrets },
     actor,
     provider,
     modelId,
+    { credentialId },
   );
 }
 
@@ -6986,6 +7036,8 @@ async function persistModelCredential(
   input: {
     provider: string;
     plaintext: string;
+    credentialId?: string;
+    createNew?: boolean;
     label?: string;
     modelId?: string;
     thinkingLevel?: string | null;
@@ -7039,11 +7091,19 @@ async function persistModelCredential(
     deps.prisma.$transaction(
       async (tx) => {
         throwIfAborted(input.signal);
-        const existing = await tx.userModelCredential.findFirst({
-          where: { userId: actor.userId, provider: { in: storedPiProviderIds(input.provider) } },
-          orderBy: newestModelCredentialOrder,
-        });
+        const existing = input.createNew
+          ? null
+          : await tx.userModelCredential.findFirst({
+              where: {
+                userId: actor.userId,
+                provider: modelCredentialProviderFilter(input.provider),
+                ...(input.credentialId ? { id: input.credentialId } : {}),
+              },
+              orderBy: newestModelCredentialOrder,
+            });
         throwIfAborted(input.signal);
+        if (input.credentialId && !existing)
+          throw new ORPCError("NOT_FOUND", { message: "Model connection not found" });
         const secret = await tx.secret.create({
           data: {
             id: stored.id,
@@ -7132,14 +7192,14 @@ async function compatibleModelPins(
   deps: RouterDeps,
   actor: Actor,
   filter: { spaceId?: string; modelId: string | { notIn: string[] } },
-) {
+): Promise<{ named: Array<ModelPinRow & { name: string }>; backups: ModelPinRow[] }> {
   const provider = OPENAI_COMPATIBLE_PROVIDER_ID;
   const where = { userId: actor.userId, ...filter };
   const pin = { spaceId: true, modelId: true } as const;
   const [bots, routines, backups] = await Promise.all([
     deps.prisma.bot.findMany({
       where: { ...where, archivedAt: null, modelProvider: provider },
-      select: { ...pin, name: true },
+      select: { ...pin, name: true, modelCredentialId: true },
     }),
     deps.prisma.routine.findMany({
       where: { ...where, modelProvider: provider, bot: { archivedAt: null } },
@@ -7150,7 +7210,7 @@ async function compatibleModelPins(
   return { named: [...bots, ...routines], backups };
 }
 
-type ModelPinRow = { spaceId: string; modelId: string | null };
+type ModelPinRow = { spaceId: string; modelId: string | null; modelCredentialId?: string | null };
 
 /** Refusal naming the bots and routines (plus "backup models") left on a dropped model. */
 function refuseModelPins(
@@ -7171,11 +7231,16 @@ async function assertNoDanglingModelPins(
   actor: Actor,
   secret: ReturnType<typeof parseModelSecret>,
   actorDefault: string,
+  credentialId?: string,
 ) {
   const stored = secret.kind === "openai_compatible" ? (secret.enabledModelIds ?? []) : [];
   const [connection, preferences, pins] = await Promise.all([
     deps.prisma.userModelCredential.findFirst({
-      where: { userId: actor.userId, provider: OPENAI_COMPATIBLE_PROVIDER_ID },
+      where: {
+        userId: actor.userId,
+        provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+        ...(credentialId ? { id: credentialId } : {}),
+      },
       orderBy: newestModelCredentialOrder,
     }),
     deps.prisma.spaceModelPreference.findMany({
@@ -7196,6 +7261,7 @@ async function assertNoDanglingModelPins(
   defaults.set(actor.spaceId, usableModelId(actorDefault));
   const dangling = new Set<ModelPinRow>();
   for (const row of [...pins.named, ...pins.backups]) {
+    if (row.modelCredentialId && row.modelCredentialId !== connection.id) continue;
     if (!row.modelId || row.modelId === defaults.get(row.spaceId)) continue;
     const selected = await findConnectedModelCredential(
       deps.prisma,
@@ -7204,6 +7270,7 @@ async function assertNoDanglingModelPins(
       OPENAI_COMPATIBLE_PROVIDER_ID,
       row.modelId,
       {
+        credentialId: row.modelCredentialId,
         replacement: {
           credentialId: connection.id,
           secret,
@@ -7226,6 +7293,7 @@ async function assertCompatibleDefaultChange(
   actor: Actor,
   modelId: string,
   thinking: { enabledModelIds?: string[]; storedEnabledModelIds?: string[] },
+  credentialId?: string,
 ) {
   const requested = modelId.trim();
   const enabled = thinking.enabledModelIds ?? [];
@@ -7235,11 +7303,25 @@ async function assertCompatibleDefaultChange(
   }
   const outgoing = enabled.find((id) => id !== requested && !stored?.includes(id));
   if (!outgoing) return;
+  const selectedCredentialId =
+    credentialId ??
+    (
+      await findConnectedModelCredential(
+        deps.prisma,
+        deps.secrets,
+        actor,
+        OPENAI_COMPATIBLE_PROVIDER_ID,
+        modelId,
+      )
+    )?.id;
   const pins = await compatibleModelPins(deps, actor, {
     spaceId: actor.spaceId,
     modelId: outgoing,
   });
-  refuseModelPins(pins, () => true);
+  refuseModelPins(
+    pins,
+    (row) => !row.modelCredentialId || row.modelCredentialId === selectedCredentialId,
+  );
 }
 
 /** A routine may only name a model the space has connected. */

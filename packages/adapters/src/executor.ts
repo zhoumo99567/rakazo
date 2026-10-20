@@ -3094,7 +3094,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
               userId: scope.userId,
               spaceId: scope.spaceId,
             },
-            select: { modelProvider: true, modelId: true, thinkingLevel: true },
+            select: {
+              modelCredentialId: true,
+              modelProvider: true,
+              modelId: true,
+              thinkingLevel: true,
+            },
           })
         : null;
       const hasOverride = Boolean(override?.modelProvider && override.modelId);
@@ -3106,6 +3111,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               scope,
               override!.modelProvider!,
               override!.modelId,
+              { credentialId: override!.modelCredentialId },
             )
           : Promise.resolve(null),
         findDefaultModelCredential(deps.prisma, scope),
@@ -3113,6 +3119,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           where: { id: "default" },
         }),
       ]);
+      if (override?.modelCredentialId && !overrideCredential)
+        throw new Error("Model connection is no longer available");
       const selected = selectConfiguredModel({
         override,
         overrideCredential,
@@ -3136,6 +3144,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         credential,
         provider,
         id,
+        undefined,
+        { requireStoredSecret: Boolean(override?.modelCredentialId) },
       );
       return {
         provider,
@@ -3772,6 +3782,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 run,
                 modelChoice.modelProvider,
                 modelChoice.modelId,
+                { credentialId: modelChoice.modelCredentialId },
               )
             : null;
         runAbortController = new AbortController();
@@ -3949,9 +3960,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
         const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
-        const pinError = run.modelPinned
-          ? pinnedModelCredentialError(modelChoice, overrideCredential)
-          : undefined;
+        const pinError =
+          run.modelPinned || modelChoice.modelCredentialId
+            ? pinnedModelCredentialError(modelChoice, overrideCredential)
+            : undefined;
         const selected = selectConfiguredModel({
           override: modelChoice,
           overrideCredential,
@@ -4029,6 +4041,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             runModelProvider,
             runModelId,
             (values) => runSecrets.push(...values),
+            { requireStoredSecret: Boolean(modelChoice.modelCredentialId) },
           );
         } catch (error) {
           // A dead or account-switched credential is already deleted. Retrying

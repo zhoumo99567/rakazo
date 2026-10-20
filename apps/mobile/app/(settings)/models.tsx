@@ -49,6 +49,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { MenuPicker } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSwitch } from "../../components/native-switch";
 import { Checkmark, Chevron } from "../../components/row-accessories";
@@ -101,6 +102,7 @@ function thinkingLevelLabel(level: ThinkingLevel, t: (message: string) => string
 const MODEL_SEARCH_THRESHOLD = 10;
 
 type ModelSelection = {
+  credentialId?: string;
   provider?: string;
   modelId?: string;
 };
@@ -115,6 +117,8 @@ export default function Models() {
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
   const [provider, setProvider] = useState("");
+  const [connectionId, setConnectionId] = useState<string | null>(null);
+  const [connectionName, setConnectionName] = useState("");
   // The provider whose optional personal-key form is open.
   const [ownKeyProvider, setOwnKeyProvider] = useState<string | null>(null);
   const [showAllProviders, setShowAllProviders] = useState(false);
@@ -217,7 +221,14 @@ export default function Models() {
         : nextMe.defaultProvider) ??
       nextCatalog[0]?.provider ??
       "";
-    const nextCredential = nextCredentials.find((entry) => entry.provider === nextProvider);
+    const nextCredential =
+      nextCredentials.find(
+        (entry) => entry.provider === nextProvider && entry.id === preferred.credentialId,
+      ) ??
+      nextCredentials.find((entry) => entry.provider === nextProvider && entry.isDefault) ??
+      nextCredentials.find((entry) => entry.provider === nextProvider);
+    setConnectionId(nextCredential?.id ?? null);
+    setConnectionName(nextCredential?.label ?? "");
     const nextModel =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? preferred.modelId?.trim() ||
@@ -451,7 +462,13 @@ export default function Models() {
   const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
   const cloudflareRoutingReady =
     !isCloudflareGateway || cloudflareGatewayRouting({ accountId, gatewayId }) !== undefined;
-  const credential = credentials.find((entry) => entry.provider === provider);
+  const credential = credentials.find(
+    (entry) =>
+      entry.provider === provider &&
+      (provider !== OPENAI_COMPATIBLE_PROVIDER_ID ||
+        connectionId === null ||
+        entry.id === connectionId),
+  );
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
@@ -471,6 +488,7 @@ export default function Models() {
     probeModels,
   );
   const isActive =
+    (!isOpenAiCompatible || credential?.isDefault === true) &&
     me?.defaultProvider === selected?.provider &&
     me?.defaultModel === (isOpenAiCompatible ? modelId.trim() : selected?.id);
   // Space still bills the host while this provider matches; model id alone is not credentials.
@@ -513,9 +531,15 @@ export default function Models() {
     resetOpenAiCompatibleProbe();
   }
 
-  function chooseProvider(nextProvider: string) {
+  function chooseProvider(nextProvider: string, selectedConnectionId?: string) {
     cancelOAuth();
-    const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
+    const nextCredential = credentials.find(
+      (entry) =>
+        entry.provider === nextProvider &&
+        (selectedConnectionId === undefined || entry.id === selectedConnectionId),
+    );
+    setConnectionId(nextCredential?.id ?? "");
+    setConnectionName(nextCredential?.label ?? "");
     const nextModelId =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ?? "")
@@ -590,6 +614,7 @@ export default function Models() {
     setPending("default");
     try {
       await rpc("models/setDefault", {
+        credentialId: isOpenAiCompatible ? credential.id : undefined,
         provider: selected.provider,
         modelId: activeModelId,
         // Catalog connections keep the space default effort on the preference;
@@ -603,7 +628,7 @@ export default function Models() {
             }
           : {}),
       });
-      await load({ provider, modelId: activeModelId });
+      await load({ provider, modelId: activeModelId, credentialId: credential.id });
       publishFeedback("model", {
         notice: isOpenAiCompatible
           ? t("Model updated.")
@@ -624,7 +649,10 @@ export default function Models() {
     clearFeedback();
     setPending("disconnect");
     try {
-      await rpc("models/disconnect", { provider: selected.provider });
+      await rpc("models/disconnect", {
+        provider: selected.provider,
+        credentialId: isOpenAiCompatible ? credential.id : undefined,
+      });
       setApiKey("");
       setThinkingLevel(null);
       await load({ provider });
@@ -715,11 +743,13 @@ export default function Models() {
     if (isOpenAiCompatible && parsedMaxTokens === undefined) return;
     setPending("connect");
     try {
-      await rpc(
+      const saved = await rpc<MobileModelCredential>(
         "models/connect",
         isOpenAiCompatible
           ? {
               provider: selected.provider,
+              credentialId: credential?.id,
+              createNew: !credential,
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
               // The server adds the default itself.
@@ -731,7 +761,7 @@ export default function Models() {
               supportsImages,
               maxImagesPerPrompt: maxImagesPerPromptInput,
               apiKey: apiKey.trim() || undefined,
-              label: selected.providerName ?? selected.provider,
+              label: connectionName.trim() || selected.providerName || selected.provider,
             }
           : {
               provider: selected.provider,
@@ -749,7 +779,7 @@ export default function Models() {
             },
       );
       setApiKey("");
-      await load({ provider, modelId });
+      await load({ provider, modelId, credentialId: saved.id });
       publishFeedback("connection", {
         notice:
           isOpenAiCompatible || savingLimitOnly
@@ -908,6 +938,24 @@ export default function Models() {
 
   const compatConfig = isOpenAiCompatible ? (
     <>
+      <MenuPicker
+        label={t("Connection")}
+        value={credential?.id ?? ""}
+        choices={[
+          { key: "", label: t("New connection") },
+          ...credentials
+            .filter((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID)
+            .map((entry) => ({ key: entry.id, label: entry.label })),
+        ]}
+        onChange={(id) => chooseProvider(OPENAI_COMPATIBLE_PROVIDER_ID, id)}
+      />
+      <Text style={styles.sectionTitle}>{t("Connection name")}</Text>
+      <TextInput
+        accessibilityLabel={t("Connection name")}
+        value={connectionName}
+        onChangeText={setConnectionName}
+        style={styles.keyInput}
+      />
       <Text style={styles.sectionTitle}>{t("Server URL")}</Text>
       <TextInput
         accessibilityLabel={t("OpenAI-compatible server URL")}
