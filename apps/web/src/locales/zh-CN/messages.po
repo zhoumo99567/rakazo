@@ -1226,7 +1226,7 @@ msgstr "完成"
 
 #: src/pages/shell/bot-tasks.tsx
 msgid "Completed"
-msgstr ""
+msgstr "已完成"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
@@ -5195,7 +5195,7 @@ msgstr ""
 
 #: src/pages/shell/bot-tasks.tsx
 msgid "Working"
-msgstr ""
+msgstr "工作中"
 
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
