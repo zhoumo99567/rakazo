@@ -11,6 +11,8 @@ import type {
   ArtifactStore,
   AutoReviewProvider,
   BrowserProvider,
+  CommandOperationSnapshot,
+  CommandRequest,
   ComputerRef,
   ConnectorCall,
   ConnectorProvider,
@@ -23,6 +25,7 @@ import type {
   ModelCredentialRetireReason,
   NotificationMessage,
   NotificationProvider,
+  ProcessEvent,
   SandboxProvider,
   SecretStore,
   SemanticMemoryProvider,
@@ -356,6 +359,13 @@ import {
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
+import type { FinishedShellCommand } from "./shell-command-stream.js";
+import type { ShellOperation } from "./shell-operations.js";
+import {
+  observeOperation,
+  saveShellOperationSnapshot,
+  shellOperationOf,
+} from "./shell-operations.js";
 import { deliverTaskNotification } from "./task-notifications.js";
 import { cancelTask, handoffToTaskBot, messageTaskBot, taskStatus } from "./task-tools.js";
 
@@ -381,6 +391,7 @@ import {
 } from "./scratchpad-tools.js";
 import { inferScript } from "./scripted-runtime.js";
 import {
+  formatFinishedShellCommand,
   isRunningShellCommand,
   observeShellCommand,
   SHELL_STILL_RUNNING_NOTICE,
@@ -4092,6 +4103,34 @@ export function createRunExecutor(deps: ExecutorDeps) {
           },
           () => runAbortController?.abort(),
         );
+        const pendingOperations: Promise<unknown>[] = [];
+        const operationObservations = new Map<string, { state: string; at: number }>();
+        const observeDurableOperation = (
+          operation: ShellOperation,
+          initial?: CommandOperationSnapshot,
+        ) =>
+          observeOperation({
+            sandbox: deps.sandbox,
+            operation,
+            context,
+            initial,
+            onSnapshot: async (snapshot) => {
+              const prior = operationObservations.get(operation.id);
+              const terminal = ["completed", "cancelled", "timed_out"].includes(snapshot.state);
+              if (!terminal && prior?.state === snapshot.state && Date.now() - prior.at < 30_000)
+                return;
+              const seq = await saveShellOperationSnapshot({
+                prisma: deps.prisma,
+                run: taskScope,
+                operation,
+                snapshot,
+                secrets: runSecrets,
+              });
+              if (seq !== undefined)
+                await deps.events.notify(run.threadId, seq).catch(() => undefined);
+              operationObservations.set(operation.id, { state: snapshot.state, at: Date.now() });
+            },
+          });
         const computerKind = (await deps.sandbox.provisionKind?.()) ?? storedComputer.kind;
         const workspaceCheckpoint = createRunWorkspaceCheckpoint(async () => {
           if (!runComputer.ready) return;
@@ -5146,6 +5185,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             });
           };
           const settleToolUncertainty = async (effectId: string, toolName: string) => {
+            const operation =
+              name === "shell" ? shellOperationOf(applied?.effect.result) : undefined;
+            if (operation) {
+              const observed = await observeShellCommand(observeDurableOperation(operation), {
+                secrets: runSecrets,
+              });
+              return observed.completion ? await observed.completion : observed.result;
+            }
             if (name === "generate_image" || name === "generate_video") {
               const recovered = await callMediaTool(true);
               if (
@@ -5609,6 +5656,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "shell") {
             const command = String(args.command ?? args.cmd ?? "");
+            if (
+              args.timeout_ms !== undefined &&
+              (!Number.isSafeInteger(args.timeout_ms) ||
+                Number(args.timeout_ms) <= 0 ||
+                Number(args.timeout_ms) > 3_600_000)
+            )
+              return finish({ error: "timeout_ms must be an integer between 1 and 3600000." });
             const refusal = protectedComputerLifecycleRefusal(command);
             if (graphical && refusal) {
               return finish({ error: desktopProtectionGuardMessage(refusal) });
@@ -5640,6 +5694,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               exitCode: null,
               output: "",
             });
+            let durableOperation: ShellOperation | undefined;
             try {
               let latestOutput = "";
               let lastPublishedAt = 0;
@@ -5679,34 +5734,80 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 (computer.kind === "desktop"
                   ? await deps.sandbox.environment?.(computer, context)
                   : undefined);
-              const observed = await observeShellCommand(
-                deps.sandbox.execute(
+              const commandRequest: CommandRequest = {
+                argv: shellEnvironment
+                  ? nativeShellCommandArgv(command, shellEnvironment)
+                  : [
+                      "bash",
+                      "-c",
+                      BACKGROUND_WORK_LAUNCH,
+                      "rakazo-background-launch",
+                      // Marker id must match sleepComputerIfIdle's probe (DB id), not ComputerRef.id
+                      // (providerRef via toComputerRef). Scope launches to this run for cancel teardown.
+                      storedComputer.id,
+                      runId,
+                      randomUUID(),
+                      command,
+                    ],
+                cwd,
+                env:
+                  Object.keys(commandEnvironment.env).length > 0
+                    ? commandEnvironment.env
+                    : undefined,
+                unsetEnv: commandEnvironment.unsetEnv,
+                timeoutMs:
+                  args.timeout_ms === undefined
+                    ? sandboxCommandTimeoutMs()
+                    : Number(args.timeout_ms),
+              };
+              let events: AsyncIterable<ProcessEvent> | undefined;
+              if (deps.sandbox.commandOperation && applied) {
+                const probe = await deps.sandbox.commandOperation(
                   computer,
-                  {
-                    argv: shellEnvironment
-                      ? nativeShellCommandArgv(command, shellEnvironment)
-                      : [
-                          "bash",
-                          "-c",
-                          BACKGROUND_WORK_LAUNCH,
-                          "rakazo-background-launch",
-                          // Marker id must match sleepComputerIfIdle's probe (DB id), not ComputerRef.id
-                          // (providerRef via toComputerRef). Scope launches to this run for cancel teardown.
-                          storedComputer.id,
-                          runId,
-                          randomUUID(),
-                          command,
-                        ],
-                    cwd,
-                    env:
-                      Object.keys(commandEnvironment.env).length > 0
-                        ? commandEnvironment.env
-                        : undefined,
-                    unsetEnv: commandEnvironment.unsetEnv,
-                    timeoutMs: sandboxCommandTimeoutMs(),
-                  },
+                  { action: "status", operationId: applied.effect.id },
                   context,
-                ),
+                );
+                if (probe) {
+                  durableOperation = { version: 1, id: applied.effect.id, computer };
+                  // Record recovery identity BEFORE asking the provider to launch anything.
+                  const recorded = await deps.prisma.externalEffect.updateMany({
+                    where: {
+                      id: applied.effect.id,
+                      runId,
+                      status: claimedEffect ? "executing" : "intended",
+                    },
+                    data: {
+                      status: "executing",
+                      result: {
+                        operation: durableOperation,
+                        state: "unknown",
+                        code: null,
+                      } as never,
+                    },
+                  });
+                  if (!recorded.count) throw uncertainEffectError(name);
+                  let initial = probe;
+                  if (probe.state === "not_found") {
+                    try {
+                      initial =
+                        (await deps.sandbox.commandOperation(
+                          computer,
+                          {
+                            action: "start",
+                            operationId: durableOperation.id,
+                            command: commandRequest,
+                          },
+                          context,
+                        )) ?? probe;
+                    } catch {
+                      context.signal.throwIfAborted();
+                    }
+                  }
+                  events = observeDurableOperation(durableOperation, initial);
+                }
+              }
+              const observed = await observeShellCommand(
+                events ?? deps.sandbox.execute(computer, commandRequest, context),
                 {
                   secrets: runSecrets,
                   onOutput: (snapshot) => {
@@ -5728,13 +5829,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 });
                 void completion.catch(() => undefined);
                 publishRunning(commandOutput(observed.result, true), true);
-                const returned = await finish({
+                const runningResult = {
                   stdout: observed.result.stdout,
                   stderr: observed.result.stderr,
                   code: null,
                   running: true,
                   notice: SHELL_STILL_RUNNING_NOTICE,
-                });
+                };
+                const returned = durableOperation ? runningResult : await finish(runningResult);
+                if (durableOperation) {
+                  pendingOperations.push(completion);
+                }
                 if (isRunningShellCommand(returned)) observer?.onShellStillRunning?.(completion);
                 return returned;
               }
@@ -5746,8 +5851,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 exitCode: redacted.code,
                 output: commandOutput(redacted, false).slice(-COMPUTER_COMMAND_OUTPUT_MAX_CHARS),
               });
-              return finish(redacted);
+              return durableOperation ? redacted : finish(redacted);
             } catch (error) {
+              if (durableOperation) throw error;
               await appendComputerCommand({
                 ...commandEvent,
                 status: "done",
@@ -7338,6 +7444,32 @@ export function createRunExecutor(deps: ExecutorDeps) {
             })
           : history;
         const runtimeHistory = [...historicalContext, ...historyWithImages];
+        // Resolve persisted operations before the model can propose replacement work.
+        // Status queries never provision a new computer or re-launch a missing command.
+        const recoveringShells = await deps.prisma.externalEffect.findMany({
+          where: {
+            runId,
+            spaceId: run.spaceId,
+            kind: "shell",
+            status: "executing",
+            result: { path: ["operation", "version"], equals: 1 },
+          },
+          orderBy: { createdAt: "asc" },
+        });
+        for (const effect of recoveringShells) {
+          const operation = shellOperationOf(effect.result);
+          if (!operation || operation.id !== effect.id || operation.computer.botId !== bot.id)
+            continue;
+          const recovered = await observeShellCommand(observeDurableOperation(operation), {
+            secrets: runSecrets,
+          });
+          const result = recovered.completion ? await recovered.completion : recovered.result;
+          runtimeHistory.push({
+            role: "user",
+            content: formatFinishedShellCommand(result as FinishedShellCommand),
+          });
+        }
+
         // Without a roster a bot only knows the bots it spawned itself.
         const botDirectory = thread.groupId
           ? undefined
@@ -7998,6 +8130,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           }
 
+          await Promise.all(pendingOperations);
           recordExplicitNoResponse(assistantTurnText);
           runComputer.throwIfFailed();
           if (approvalPausePending || !leaseValid) return;

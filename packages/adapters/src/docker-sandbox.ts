@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 import type {
   AdapterContext,
+  CommandOperationRequest,
+  CommandOperationSnapshot,
   CommandRequest,
   ComputerActionRequest,
   ComputerFileEntry,
@@ -27,6 +30,7 @@ import {
   computerObservation,
   normalizeWorkspacePath,
 } from "./computer-support.js";
+import { DURABLE_COMMAND_RUNNER } from "./durable-command-runner.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
@@ -269,6 +273,77 @@ export class DockerSandboxProvider implements SandboxProvider {
     if (body.stdout) yield { type: "stdout", data: body.stdout };
     if (body.stderr) yield { type: "stderr", data: body.stderr };
     yield { type: "exit", code: body.code };
+  }
+
+  async commandOperation(
+    computer: ComputerRef,
+    request: CommandOperationRequest,
+    context: AdapterContext,
+  ): Promise<CommandOperationSnapshot> {
+    if (!context.runId || !context.spaceId || computer.botId !== context.botId)
+      throw new Error("Durable commands require a scoped run");
+    const command =
+      request.action === "start"
+        ? {
+            argv: sandboxCommandArgv(request.command),
+            cwd: dockerCwd(request.command.cwd),
+            timeoutMs: boundedSandboxCommandTimeoutMs(request.command.timeoutMs),
+          }
+        : undefined;
+    const payload = {
+      action: request.action,
+      operationId: request.operationId,
+      scope: JSON.stringify([context.spaceId, computer.botId, context.runId]),
+      command,
+      fingerprint: command
+        ? createHash("sha256")
+            .update(
+              JSON.stringify({
+                command,
+                env: request.action === "start" ? request.command.env : undefined,
+                unsetEnv: request.action === "start" ? request.command.unsetEnv : undefined,
+              }),
+            )
+            .digest("hex")
+        : undefined,
+    };
+    let stdout = "";
+    let code: number | undefined;
+    for await (const event of this.execute(
+      computer,
+      {
+        argv: ["python3", "-c", DURABLE_COMMAND_RUNNER, JSON.stringify(payload)],
+        env: request.action === "start" ? request.command.env : undefined,
+        unsetEnv: request.action === "start" ? request.command.unsetEnv : undefined,
+        timeoutMs: 15_000,
+      },
+      context,
+    )) {
+      if (event.type === "stdout") stdout += event.data;
+      if (event.type === "exit") code = event.code;
+    }
+    if (code !== 0) throw new Error("Could not query command operation");
+    const value = JSON.parse(stdout) as CommandOperationSnapshot;
+    if (
+      !["running", "completed", "timed_out", "cancelled", "unknown", "not_found"].includes(
+        value.state,
+      ) ||
+      typeof value.stdout !== "string" ||
+      typeof value.stderr !== "string" ||
+      typeof value.observedAt !== "string" ||
+      !Number.isFinite(Date.parse(value.observedAt)) ||
+      (value.code !== null && !Number.isInteger(value.code))
+    )
+      throw new Error("Invalid command operation response");
+    return {
+      state: value.state,
+      stdout: value.stdout,
+      stderr: value.stderr,
+      code: value.code,
+      observedAt: value.observedAt,
+      startedAt: value.startedAt,
+      deadlineAt: value.deadlineAt,
+    };
   }
 
   async pageBrowser(

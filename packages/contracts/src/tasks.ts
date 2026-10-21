@@ -13,6 +13,21 @@ export const TaskStatusSchema = z.enum([
   "failed",
   "cancelled",
 ]);
+export const TaskExecutionSchema = z.object({
+  heartbeat: z.enum(["current", "expired", "inactive"]),
+  leaseExpiresAt: IsoDate.nullable(),
+  operations: z.array(
+    z.object({
+      id: Id,
+      state: z.enum(["running", "completed", "timed_out", "cancelled", "unknown"]),
+      startedAt: IsoDate.nullable(),
+      deadlineAt: IsoDate.nullable(),
+      observedAt: IsoDate.nullable(),
+      code: z.number().int().nullable(),
+    }),
+  ),
+});
+export type TaskExecution = z.infer<typeof TaskExecutionSchema>;
 export const TaskSummarySchema = z.object({
   id: Id,
   botId: Id,
@@ -35,5 +50,8 @@ export const TaskSummarySchema = z.object({
     .optional(),
   pendingMessageCount: z.number().int().nonnegative().optional(),
   reportOverdue: z.boolean().optional(),
+  execution: TaskExecutionSchema.optional(),
+  lastReportedAt: IsoDate.nullable().optional(),
+  lastProgressAt: IsoDate.nullable().optional(),
 });
 export type TaskSummary = z.infer<typeof TaskSummarySchema>;

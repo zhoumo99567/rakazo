@@ -12,7 +12,7 @@ import { clipToolResultText } from "./pi-runtime-limits.js";
 export const SHELL_STREAM_IDLE_MS = 1_000;
 
 export const SHELL_STILL_RUNNING_NOTICE =
-  "Still running. Tell the user any one-time code or sign-in URL in the output.";
+  "Still running. Wait for the existing operation; do not launch it again. Relay any one-time code or sign-in URL if present.";
 
 export interface ShellCommandSnapshot {
   stdout: string;
@@ -160,11 +160,12 @@ export async function observeShellCommand(
     timer = setTimeout(() => resolveIdle?.("idle"), idleMs);
   };
 
+  armIdle();
   const done = (async (): Promise<FinishedShellCommand> => {
     try {
       for await (const event of events) {
-        if (event.type === "stdout") stdout += event.data;
-        else if (event.type === "stderr") stderr += event.data;
+        if (event.type === "stdout") stdout = (stdout + event.data).slice(-131072);
+        else if (event.type === "stderr") stderr = (stderr + event.data).slice(-131072);
         else if (event.type === "exit") {
           code = event.code;
           break;
@@ -188,7 +189,11 @@ export async function observeShellCommand(
       finished = true;
       resolveIdle?.("done");
     }
-    return { ...redact({ stdout, stderr }, false), code: code ?? 0 };
+    if (code === undefined)
+      throw new Error(
+        "Command stream ended without an exit result; verify the operation before retrying.",
+      );
+    return { ...redact({ stdout, stderr }, false), code };
   })();
 
   const reason = await Promise.race([

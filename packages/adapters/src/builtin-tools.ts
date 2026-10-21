@@ -399,6 +399,13 @@ export const builtinAgentTools: ConnectorTool[] = [
       properties: {
         command: { type: "string" },
         cwd: { type: "string" },
+        timeout_ms: {
+          type: "integer",
+          minimum: 1,
+          maximum: 3600000,
+          description:
+            "Independent command runtime limit, up to one hour. Set explicitly for long commands (for example 1800000 for 30 minutes). Reporting reminders never terminate a command.",
+        },
       },
       required: ["command"],
     },

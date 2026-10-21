@@ -24,6 +24,59 @@ describe("Docker sandbox", () => {
     vi.unstubAllGlobals();
   });
 
+  it("scopes durable operations and separates the command deadline from query transport", async () => {
+    const status = {
+      state: "completed",
+      stdout: "result",
+      stderr: "",
+      code: 0,
+      observedAt: new Date().toISOString(),
+      runnerPid: 123,
+    };
+    const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      Response.json({ stdout: JSON.stringify(status), stderr: "", code: 0 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const computer = {
+      id: "computer",
+      botId: "bot",
+      kind: "docker" as const,
+      providerRef: "computer",
+    };
+    const result = await provider.commandOperation(
+      computer,
+      {
+        action: "start",
+        operationId: "effect",
+        command: { argv: ["sleep", "1800"], timeoutMs: 2_100_000 },
+      },
+      { ...context, runId: "run" },
+    );
+    expect(result).toMatchObject({ state: "completed", code: 0, stdout: "result" });
+    expect(result).not.toHaveProperty("runnerPid");
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body));
+    expect(body.timeoutMs).toBe(15_000);
+    const request = JSON.parse(body.argv.at(-1));
+    expect(request).toMatchObject({
+      action: "start",
+      operationId: "effect",
+      scope: JSON.stringify(["workspace", "bot", "run"]),
+      command: { timeoutMs: 2_100_000 },
+    });
+    await expect(
+      provider.commandOperation(computer, { action: "status", operationId: "effect" }, context),
+    ).rejects.toThrow("scoped run");
+    await expect(
+      provider.commandOperation(
+        { ...computer, botId: "other" },
+        { action: "status", operationId: "effect" },
+        { ...context, runId: "run" },
+      ),
+    ).rejects.toThrow("scoped run");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects a failed interactive screen instead of returning a viewer fallback", async () => {
     vi.stubGlobal(
       "fetch",

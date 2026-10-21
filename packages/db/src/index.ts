@@ -25,6 +25,7 @@ export * from "./scope.js";
 export * from "./sessions.js";
 export * from "./spaces.js";
 export * from "./task-coordination.js";
+export { loadTaskExecutions } from "./task-execution.js";
 export * from "./task-management.js";
 export * from "./task-reporting.js";
 export * from "./task-run-claim.js";

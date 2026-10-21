@@ -398,7 +398,9 @@ export async function sendTaskMessage(
           where: { id: source.task.id },
           data: {
             lastReportedAt: now,
-            ...(input.progressChanged === false ? {} : { lastProgressAt: now }),
+            ...(input.kind === "status" && input.progressChanged !== false
+              ? { lastProgressAt: now }
+              : {}),
             latestReport: { text: input.text, reportedAt: now.toISOString(), kind: input.kind },
             reportDueAt:
               source.task.reportIntervalMs > 0
@@ -542,7 +544,7 @@ export async function claimTaskInbox(prisma: PrismaClient, run: TaskRunScope, se
       if (!seenIds.includes(id) && !task.reportReminderAt) {
         messages.push({
           id,
-          text: `Task reporting reminder: send message_bot to parent task ${task.parentTaskId} with intent=status. Briefly report the current stage, concrete changes, blockers and next step. If unchanged, explain the ongoing operation and set progress_changed=false. Do not claim progress from a heartbeat. Questions needing decisions use intent=question. This reminder does not complete your task.`,
+          text: `Soft task inspection: at the next safe boundary, send message_bot to parent task ${task.parentTaskId} with intent=status. Briefly report the current stage, concrete changes, blockers and next step. If unchanged, explain the ongoing operation and set progress_changed=false. Do not claim progress from a heartbeat. Questions needing decisions use intent=question. Reporting lateness never terminates work. Do not interrupt or restart a healthy operation to answer this reminder. Heartbeats and output activity are not business progress.`,
         });
       }
     }
@@ -621,7 +623,7 @@ export async function taskRunContext(prisma: PrismaClient, run: TaskRunScope) {
       "This is durable task work. handoff_to_bot creates a child and keeps your task. Results return automatically. End this turn to wait and release resources; do not poll. Use message_bot with task_id for updates and questions (status for ordinary progress, question for blockers needing a decision), and reply_to to answer a task question. A result message does not complete a task. Answer every incoming question using reply_to before ending the turn; ask the user if you need their decision. Unanswered incoming questions will resume this task.",
       ...(task.parentTaskId && task.reportIntervalMs > 0
         ? [
-            `Reporting interval: ${task.reportIntervalMs / 60_000} active minutes. Use status for meaningful progress; when a scheduled reminder finds no change, report the current operation with progress_changed=false. Human-input and delegated-child waits pause this clock.`,
+            `Report meaningful stage changes, blockers and results when they occur. Soft inspection interval: ${task.reportIntervalMs / 60_000} active minutes, not an execution deadline. Use status for meaningful progress; when a scheduled reminder finds no change, report the current operation with progress_changed=false. Human-input and delegated-child waits pause this clock.`,
           ]
         : []),
       "<task_request>",

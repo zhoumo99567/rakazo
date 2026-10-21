@@ -26,6 +26,8 @@ import type {
   CloudAgentLaunchRequest,
   CloudAgentReplyRequest,
   CloudAgentSnapshot,
+  CommandOperationRequest,
+  CommandOperationSnapshot,
   CommandRequest,
   ComputerActionRequest,
   ComputerActionResult,
@@ -148,6 +150,12 @@ export interface SandboxProvider {
     request: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent>;
+  /** Optional durable commands. A status query must never create or replay an operation. */
+  commandOperation?(
+    computer: ComputerRef,
+    request: CommandOperationRequest,
+    context: AdapterContext,
+  ): Promise<CommandOperationSnapshot | undefined>;
   /** Cancel only this run’s native commands; other providers may use a sandbox-scoped fallback. */
   cancelRunWork?(
     computer: ComputerRef,

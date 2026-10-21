@@ -3,6 +3,7 @@ import type {
   MemoryCommitRequest,
   MemoryReadRequest,
   MemorySnapshot,
+  SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
 import {
@@ -35,7 +36,16 @@ vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
     _prisma: unknown,
     input: { computerId: string; botId: string; runId: string },
   ) => ({ ...input, fence: 7 }),
-  provisionComputer: async () => ({ id: "computer-1", kind: "desktop" }),
+  provisionComputer: async () => ({
+    id: "computer-1",
+    botId: "bot-1",
+    providerRef: "computer-1",
+    kind: "desktop",
+  }),
+}));
+
+vi.mock("./computer-workspace.js", () => ({
+  checkpointRunComputerWorkspace: vi.fn(async () => undefined),
 }));
 
 vi.mock("./auto-review.js", async (importOriginal) => ({
@@ -63,7 +73,7 @@ type ToolCall = {
   executionId: string;
 };
 
-function fixture(runId = "run-1") {
+function fixture(runId = "run-1", commandOperation?: SandboxProvider["commandOperation"]) {
   const effects: Effect[] = [];
   const results: unknown[] = [];
   const media = new FakeMediaGenerationProvider();
@@ -276,7 +286,7 @@ function fixture(runId = "run-1") {
       resolveCall: async () => undefined,
       execute: async function* () {},
     },
-    sandbox: { describe: () => ({ capabilities: { graphical: false } }) },
+    sandbox: { describe: () => ({ capabilities: { graphical: false } }), commandOperation },
     memory: {
       describe: () => ({ capabilities: {} }),
       read: async (request: MemoryReadRequest) => ({
@@ -322,6 +332,84 @@ function fixture(runId = "run-1") {
 }
 
 describe("mutating tool effect idempotency keys", () => {
+  it("persists recovery identity before launch and forwards the independent command deadline", async () => {
+    const query = vi.fn<NonNullable<SandboxProvider["commandOperation"]>>(
+      async (_computer, request) => {
+        if (request.action === "status")
+          return {
+            state: "not_found",
+            stdout: "",
+            stderr: "",
+            code: null,
+            observedAt: new Date().toISOString(),
+          };
+        expect(request.action).toBe("start");
+        expect(f.effects[0]).toMatchObject({
+          status: "executing",
+          result: { operation: { id: request.operationId } },
+        });
+        if (request.action === "start") expect(request.command.timeoutMs).toBe(2_100_000);
+        return {
+          state: "completed",
+          stdout: "finished once",
+          stderr: "",
+          code: 0,
+          observedAt: new Date().toISOString(),
+        };
+      },
+    );
+    const f = fixture("fresh-durable-run", query);
+    const args = { command: "long operation", timeout_ms: 2_100_000 };
+    f.setCalls([{ name: "shell", args, executionId: "first-call" }]);
+    await f.run();
+    expect(query.mock.calls.map((call) => call[1].action)).toEqual(["status", "start"]);
+    expect(f.results[0]).toMatchObject({ code: 0, stdout: "finished once" });
+    f.setCalls([{ name: "shell", args, executionId: "new-call-id" }]);
+    await f.run();
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(f.messageCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("queries the persisted operation before opening the model after restart", async () => {
+    const operation = {
+      version: 1,
+      id: "durable-shell",
+      computer: { id: "computer-1", botId: "bot-1", providerRef: "computer-1", kind: "docker" },
+    };
+    const query = vi.fn(async () => ({
+      state: "completed" as const,
+      code: 0,
+      stdout: "persisted output",
+      stderr: "",
+      observedAt: new Date().toISOString(),
+    }));
+    const f = fixture("durable-run", query);
+    const args = { command: "long operation", timeout_ms: 1800000 };
+    f.effects.push({
+      id: operation.id,
+      spaceId: "space-1",
+      runId: "durable-run",
+      kind: "shell",
+      idempotencyKey: toolEffectIdempotencyKey("durable-run", "shell", args),
+      status: "executing",
+      request: args,
+      result: { operation, state: "running" },
+    });
+    f.setCalls([{ name: "shell", args, executionId: "new-model-call" }]);
+    await f.run();
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ action: "status", operationId: operation.id }),
+      ]),
+    );
+    expect(f.results[0]).toMatchObject({ code: 0, stdout: "persisted output" });
+    expect(f.messageCreate).toHaveBeenCalledTimes(1);
+    await f.run();
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(f.messageCreate).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["generate_image", "generate_video"] as const)(
     "recovers interrupted %s through the executor with a changed tool-call ID",
     async (name) => {

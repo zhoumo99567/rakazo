@@ -441,6 +441,41 @@ postgres("durable bot coordination", () => {
     });
   });
 
+  it("keeps a thirty minute task alive through repeated soft inspections and delivers its result once", async () => {
+    const parent = await root();
+    const child = await start((await delegate(parent)).runId!);
+    const startTime = new Date();
+    await prisma.task.update({
+      where: { id: child.taskId },
+      data: { reportDueAt: new Date(startTime.getTime() + 300_000) },
+    });
+    for (let minutes = 5; minutes <= 30; minutes += 5) {
+      await reconcileTaskReports(prisma, 100, new Date(startTime.getTime() + minutes * 60_000));
+      expect((await prisma.run.findUniqueOrThrow({ where: { id: child.id } })).status).toBe(
+        "running",
+      );
+      expect(
+        (await prisma.task.findUniqueOrThrow({ where: { id: child.taskId } })).lastProgressAt,
+      ).toBeNull();
+    }
+    expect(
+      await prisma.taskMessage.count({
+        where: { taskId: parent.taskId, deliveryKey: { startsWith: "report-overdue:" } },
+      }),
+    ).toBe(1);
+    await finish(child);
+    await reconcileTaskContinuations(prisma);
+    await reconcileTaskContinuations(prisma);
+    expect(
+      await prisma.taskMessage.count({
+        where: { taskId: parent.taskId, fromTaskId: child.taskId, kind: "outcome" },
+      }),
+    ).toBe(1);
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: child.taskId } })).status).toBe(
+      "completed",
+    );
+  });
+
   it("reminds once at the report boundary and cancels overdue escalation after a report", async () => {
     const parent = await root();
     const child = await start((await delegate(parent)).runId!);

@@ -110,6 +110,21 @@ export type ProcessEvent =
   | { type: "stderr"; data: string }
   | { type: "exit"; code: number };
 
+/** Provider-owned operation state survives the caller disconnecting. Unknown is never success. */
+export interface CommandOperationSnapshot {
+  state: "running" | "completed" | "timed_out" | "cancelled" | "unknown" | "not_found";
+  stdout: string;
+  stderr: string;
+  code: number | null;
+  startedAt?: string;
+  deadlineAt?: string;
+  observedAt: string;
+}
+
+export type CommandOperationRequest =
+  | { action: "start"; operationId: string; command: CommandRequest }
+  | { action: "status" | "cancel"; operationId: string };
+
 export interface ScreenRequest {
   view: "stream" | "snapshot";
   /** Request a separately authorized control stream instead of the read-only viewer. */

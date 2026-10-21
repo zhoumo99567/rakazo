@@ -9,6 +9,7 @@ import {
   cancelCoordinatedTask,
   delegateTask,
   IsolationError,
+  loadTaskExecutions,
   lockBotManagement,
   reconcileTaskContinuations,
   requireBotManager,
@@ -171,7 +172,13 @@ export async function taskStatus(deps: Deps, run: TaskRunScope, taskId = run.tas
       ),
     );
   }
+  const executions = await loadTaskExecutions(
+    deps.prisma,
+    [target.id, ...target.children.map((child) => child.id)],
+    run,
+  );
   const summary = (task: typeof target) => ({
+    execution: executions.get(task.id),
     id: task.id,
     botId: task.botId,
     parentTaskId: task.parentTaskId,

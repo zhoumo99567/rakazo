@@ -64,7 +64,7 @@ export async function reconcileTaskReports(prisma: PrismaClient, take = 100, now
           fromBotName: bot?.name ?? "Bot",
           kind: "fyi",
           deliveryClass: "actionable",
-          text: "System observation: this child task has not supplied its scheduled report. Its Run is still marked running; this is not evidence of progress. A model or tool call may still be in flight. Inspect the existing task if intervention is needed; do not dispatch duplicate work.",
+          text: "System observation: this child task has not supplied its scheduled report. This is a soft inspection reminder, not an execution deadline. Check task_status: executor heartbeat, operation state and last business progress are independent. A long model or command operation may still be healthy. Do not cancel, fail, restart or duplicate work merely because a report is late.",
           deliveryKey: `report-overdue:${task.id}:${task.reportDueAt.toISOString()}`,
         },
       });

@@ -4,6 +4,7 @@ import type { PrismaClient } from "./client.js";
 import { appendEventInTransaction } from "./events.js";
 import { IsolationError } from "./scope.js";
 import { cancelCoordinatedTask } from "./task-coordination.js";
+import { loadTaskExecutions } from "./task-execution.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 export async function listOwnedTasks(
@@ -54,6 +55,11 @@ export async function listOwnedTasks(
     },
   });
   const page = rows.slice(0, 40);
+  const executions = await loadTaskExecutions(
+    prisma,
+    page.map((task) => task.id),
+    actor,
+  );
   return {
     tasks: page.map((task) =>
       TaskSummarySchema.parse({
@@ -83,6 +89,9 @@ export async function listOwnedTasks(
               },
         childCount: task._count.children,
         latestReport: task.latestReport ?? null,
+        execution: executions.get(task.id),
+        lastReportedAt: task.lastReportedAt?.toISOString() ?? null,
+        lastProgressAt: task.lastProgressAt?.toISOString() ?? null,
         pendingMessageCount: ["completed", "failed", "cancelled"].includes(task.status)
           ? 0
           : task._count.inbox,

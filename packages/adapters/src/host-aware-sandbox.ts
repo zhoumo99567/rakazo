@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import type {
   AdapterContext,
+  CommandOperationRequest,
   CommandRequest,
   ComputerActionRequest,
   ComputerInput,
@@ -148,6 +149,16 @@ export class HostAwareSandbox implements SandboxProvider {
     if (computer.kind === "desktop" && !(await this.hostEnabled()))
       throw new Error("Local computer access is disabled");
     yield* this.route(computer).execute(computer, request, context);
+  }
+
+  async commandOperation(
+    computer: ComputerRef,
+    request: CommandOperationRequest,
+    context: AdapterContext,
+  ) {
+    if (computer.kind === "desktop" && !(await this.hostEnabled()))
+      throw new Error("Local computer access is disabled");
+    return this.route(computer).commandOperation?.(computer, request, context);
   }
 
   workspaceDirectories(
