@@ -529,8 +529,8 @@ msgid "All statuses"
 msgstr "כל הסטטוסים"
 
 #: src/pages/shell/bot-tasks.tsx
-msgid "All tasks"
-msgstr ""
+#~ msgid "All tasks"
+#~ msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "All time"
@@ -728,6 +728,14 @@ msgstr "לשאול לפני שליחת אימייל חיצוני"
 msgid "Ask the server owner to configure this provider."
 msgstr "יש לבקש מבעלי השרת להגדיר את הספק הזה."
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Assigned by {name}"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Assigned by a bot"
+msgstr ""
+
 #. placeholder {0}: preset.time
 #: src/pages/RoutineSchedule.tsx
 msgid "at {0}"
@@ -799,6 +807,7 @@ msgstr "אווטארים"
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Back"
 msgstr "חזרה"
 
@@ -2306,6 +2315,10 @@ msgstr "האימייל הזה לא מורשה להירשם"
 msgid "Email verification required"
 msgstr "נדרש אימות אימייל"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Ended"
+msgstr ""
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
 msgstr "מסתיים ב-{day}"
@@ -2832,6 +2845,14 @@ msgstr ""
 msgid "Later"
 msgstr "מאוחר יותר"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Latest first"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Latest report"
+msgstr ""
+
 #: src/components/computer/TerminalApp.tsx
 msgid "Launched {app}"
 msgstr "{app} הופעלה"
@@ -2913,6 +2934,10 @@ msgstr "טוען תצוגה מקדימה…"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Loading rules…"
 msgstr "טוען כללים…"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Loading tasks"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Loading tools…"
@@ -3702,6 +3727,11 @@ msgstr "יש להדביק את מפתח ה-API ולבדוק שוב."
 msgid "Paused"
 msgstr "מושהה"
 
+#. placeholder {0}: task.pendingMessageCount
+#: src/pages/shell/bot-tasks.tsx
+msgid "Pending messages: {0}"
+msgstr "Pending messages: {0}"
+
 #: src/components/call/VoiceChatCard.tsx
 msgid "Phone call"
 msgstr ""
@@ -4048,6 +4078,10 @@ msgstr "התשובה בוטלה"
 msgid "Replying to {0}"
 msgstr "תשובה ל-{0}"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Report overdue"
+msgstr "Report overdue"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
 msgstr "מחקר וכתיבה"
@@ -4285,6 +4319,10 @@ msgstr "שומר…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "אפשר לענות כן או לא, או במשפט."
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Scheduled task"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4627,6 +4665,10 @@ msgstr "התחלת תקופת ניסיון חינם של {trialDays} ימים"
 msgid "Start recording"
 msgstr "התחלת הקלטה"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Started by you"
+msgstr ""
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "מתחיל"
@@ -4715,9 +4757,17 @@ msgstr "מחליף…"
 msgid "System"
 msgstr "מערכת"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "System task"
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Take control"
 msgstr "השתלטות"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Task timeline"
+msgstr ""
 
 #: src/pages/shell/bot-tasks.tsx
 msgid "Tasks"
@@ -5381,11 +5431,3 @@ msgstr "OpenRouter"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "צוות של סוכנים שזמינים תמיד<0/>שאפשר להטיל עליהם עבודה אמיתית."
-
-#: src/pages/shell/bot-tasks.tsx
-msgid "Pending messages: {0}"
-msgstr "Pending messages: {0}"
-
-#: src/pages/shell/bot-tasks.tsx
-msgid "Report overdue"
-msgstr "Report overdue"

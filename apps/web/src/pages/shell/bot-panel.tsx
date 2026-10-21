@@ -576,6 +576,7 @@ export function BotSettings({
           }}
         />
       </div>
+      <BotTasks key={`tasks-${bot.id}`} botId={bot.id} />
       <details
         data-testid="bot-settings-advanced"
         className="group mt-5"
@@ -591,7 +592,6 @@ export function BotSettings({
             ›
           </span>
         </summary>
-        <BotTasks key={`tasks-${bot.id}`} botId={bot.id} />
         <InstructionSettings key={bot.id} bot={bot} />
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
         <ErrorBoundary fallback={<SectionLoadFailed />}>

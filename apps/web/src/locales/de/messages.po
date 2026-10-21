@@ -529,8 +529,8 @@ msgid "All statuses"
 msgstr ""
 
 #: src/pages/shell/bot-tasks.tsx
-msgid "All tasks"
-msgstr ""
+#~ msgid "All tasks"
+#~ msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "All time"
@@ -728,6 +728,14 @@ msgstr "Vor dem Senden externer E-Mails nachfragen"
 msgid "Ask the server owner to configure this provider."
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Assigned by {name}"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Assigned by a bot"
+msgstr ""
+
 #. placeholder {0}: preset.time
 #: src/pages/RoutineSchedule.tsx
 msgid "at {0}"
@@ -799,6 +807,7 @@ msgstr ""
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Back"
 msgstr ""
 
@@ -2306,6 +2315,10 @@ msgstr "Diese E-Mail-Adresse ist nicht zur Registrierung zugelassen"
 msgid "Email verification required"
 msgstr "E-Mail-Verifizierung erforderlich"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Ended"
+msgstr ""
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
 msgstr ""
@@ -2832,6 +2845,14 @@ msgstr "Letzte Prüfung {0}: keine Änderungen"
 msgid "Later"
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Latest first"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Latest report"
+msgstr ""
+
 #: src/components/computer/TerminalApp.tsx
 msgid "Launched {app}"
 msgstr "{app} gestartet"
@@ -2913,6 +2934,10 @@ msgstr "Vorschau wird geladen…"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Loading rules…"
 msgstr "Regeln werden geladen…"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Loading tasks"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Loading tools…"
@@ -3702,6 +3727,11 @@ msgstr "Füge deinen API-Schlüssel ein und teste erneut."
 msgid "Paused"
 msgstr ""
 
+#. placeholder {0}: task.pendingMessageCount
+#: src/pages/shell/bot-tasks.tsx
+msgid "Pending messages: {0}"
+msgstr "Pending messages: {0}"
+
 #: src/components/call/VoiceChatCard.tsx
 msgid "Phone call"
 msgstr "Telefonanruf"
@@ -4048,6 +4078,10 @@ msgstr ""
 msgid "Replying to {0}"
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Report overdue"
+msgstr "Report overdue"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
 msgstr ""
@@ -4285,6 +4319,10 @@ msgstr "Wird gespeichert…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Antworte mit Ja oder Nein oder in einem Satz."
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Scheduled task"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4627,6 +4665,10 @@ msgstr ""
 msgid "Start recording"
 msgstr "Aufnahme starten"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Started by you"
+msgstr ""
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Startet"
@@ -4715,9 +4757,17 @@ msgstr "Wird gewechselt…"
 msgid "System"
 msgstr "System"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "System task"
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Take control"
 msgstr "Kontrolle übernehmen"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Task timeline"
+msgstr ""
 
 #: src/pages/shell/bot-tasks.tsx
 msgid "Tasks"
@@ -5381,11 +5431,3 @@ msgstr "Dein OpenRouter"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
-
-#: src/pages/shell/bot-tasks.tsx
-msgid "Pending messages: {0}"
-msgstr "Pending messages: {0}"
-
-#: src/pages/shell/bot-tasks.tsx
-msgid "Report overdue"
-msgstr "Report overdue"

@@ -529,8 +529,8 @@ msgid "All statuses"
 msgstr ""
 
 #: src/pages/shell/bot-tasks.tsx
-msgid "All tasks"
-msgstr ""
+#~ msgid "All tasks"
+#~ msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "All time"
@@ -728,6 +728,14 @@ msgstr "Спросите перед отправкой внешнего элек
 msgid "Ask the server owner to configure this provider."
 msgstr "Попросите владельца сервера настроить этого провайдера."
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Assigned by {name}"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Assigned by a bot"
+msgstr ""
+
 #. placeholder {0}: preset.time
 #: src/pages/RoutineSchedule.tsx
 msgid "at {0}"
@@ -799,6 +807,7 @@ msgstr "Аватары"
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Back"
 msgstr "Назад"
 
@@ -2306,6 +2315,10 @@ msgstr "Регистрация с этим адресом электронной
 msgid "Email verification required"
 msgstr "Требуется подтверждение электронной почты"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Ended"
+msgstr ""
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
 msgstr ""
@@ -2832,6 +2845,14 @@ msgstr "Последняя проверка {0}: без изменений"
 msgid "Later"
 msgstr "Позже"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Latest first"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Latest report"
+msgstr ""
+
 #: src/components/computer/TerminalApp.tsx
 msgid "Launched {app}"
 msgstr ""
@@ -2913,6 +2934,10 @@ msgstr "Загрузка предварительного просмотра…"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Loading rules…"
 msgstr "Загрузка правил…"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Loading tasks"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Loading tools…"
@@ -3702,6 +3727,11 @@ msgstr "Вставьте API-ключ и повторите тест."
 msgid "Paused"
 msgstr "Приостановлено"
 
+#. placeholder {0}: task.pendingMessageCount
+#: src/pages/shell/bot-tasks.tsx
+msgid "Pending messages: {0}"
+msgstr "Pending messages: {0}"
+
 #: src/components/call/VoiceChatCard.tsx
 msgid "Phone call"
 msgstr "Телефонный звонок"
@@ -4048,6 +4078,10 @@ msgstr ""
 msgid "Replying to {0}"
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Report overdue"
+msgstr "Report overdue"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
 msgstr ""
@@ -4285,6 +4319,10 @@ msgstr "Сохранение…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Скажите «да» или «нет» или ответьте предложением."
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Scheduled task"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4627,6 +4665,10 @@ msgstr ""
 msgid "Start recording"
 msgstr "Начать запись"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Started by you"
+msgstr ""
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Запуск"
@@ -4715,9 +4757,17 @@ msgstr "Переключение…"
 msgid "System"
 msgstr "Системная"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "System task"
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Take control"
 msgstr "Взять управление"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Task timeline"
+msgstr ""
 
 #: src/pages/shell/bot-tasks.tsx
 msgid "Tasks"
@@ -5381,11 +5431,3 @@ msgstr "Ваш OpenRouter"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Ваша команда постоянно работающих агентов<0/>, которым вы можете дать настоящую работу."
-
-#: src/pages/shell/bot-tasks.tsx
-msgid "Pending messages: {0}"
-msgstr "Pending messages: {0}"
-
-#: src/pages/shell/bot-tasks.tsx
-msgid "Report overdue"
-msgstr "Report overdue"

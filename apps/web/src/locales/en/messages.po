@@ -529,8 +529,8 @@ msgid "All statuses"
 msgstr "All statuses"
 
 #: src/pages/shell/bot-tasks.tsx
-msgid "All tasks"
-msgstr "All tasks"
+#~ msgid "All tasks"
+#~ msgstr "All tasks"
 
 #: src/pages/Artifacts.tsx
 msgid "All time"
@@ -728,6 +728,14 @@ msgstr "Ask before sending external email"
 msgid "Ask the server owner to configure this provider."
 msgstr "Ask the server owner to configure this provider."
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Assigned by {name}"
+msgstr "Assigned by {name}"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Assigned by a bot"
+msgstr "Assigned by a bot"
+
 #. placeholder {0}: preset.time
 #: src/pages/RoutineSchedule.tsx
 msgid "at {0}"
@@ -799,6 +807,7 @@ msgstr "Avatars"
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Back"
 msgstr "Back"
 
@@ -2306,6 +2315,10 @@ msgstr "Email is not allowed to register"
 msgid "Email verification required"
 msgstr "Email verification required"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Ended"
+msgstr "Ended"
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
 msgstr "Ends {day}"
@@ -2832,6 +2845,14 @@ msgstr "Last check {0}: no changes"
 msgid "Later"
 msgstr "Later"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Latest first"
+msgstr "Latest first"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Latest report"
+msgstr "Latest report"
+
 #: src/components/computer/TerminalApp.tsx
 msgid "Launched {app}"
 msgstr "Launched {app}"
@@ -2913,6 +2934,10 @@ msgstr "Loading preview…"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Loading rules…"
 msgstr "Loading rules…"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Loading tasks"
+msgstr "Loading tasks"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Loading tools…"
@@ -3702,6 +3727,11 @@ msgstr "Paste your API key, then test again."
 msgid "Paused"
 msgstr "Paused"
 
+#. placeholder {0}: task.pendingMessageCount
+#: src/pages/shell/bot-tasks.tsx
+msgid "Pending messages: {0}"
+msgstr "Pending messages: {0}"
+
 #: src/components/call/VoiceChatCard.tsx
 msgid "Phone call"
 msgstr "Phone call"
@@ -4048,6 +4078,10 @@ msgstr "Reply cancelled"
 msgid "Replying to {0}"
 msgstr "Replying to {0}"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Report overdue"
+msgstr "Report overdue"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
 msgstr "Research & writing"
@@ -4285,6 +4319,10 @@ msgstr "Saving…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Say yes or no, or answer in a sentence."
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Scheduled task"
+msgstr "Scheduled task"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4627,6 +4665,10 @@ msgstr "Start {trialDays}-day free trial"
 msgid "Start recording"
 msgstr "Start recording"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Started by you"
+msgstr "Started by you"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "Starting"
@@ -4715,9 +4757,17 @@ msgstr "Switching…"
 msgid "System"
 msgstr "System"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "System task"
+msgstr "System task"
+
 #: src/pages/Shell.tsx
 msgid "Take control"
 msgstr "Take control"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Task timeline"
+msgstr "Task timeline"
 
 #: src/pages/shell/bot-tasks.tsx
 msgid "Tasks"
@@ -5381,11 +5431,3 @@ msgstr "Your OpenRouter"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Your team of always-on agents<0/>that you can give real work to."
-
-#: src/pages/shell/bot-tasks.tsx
-msgid "Pending messages: {0}"
-msgstr "Pending messages: {0}"
-
-#: src/pages/shell/bot-tasks.tsx
-msgid "Report overdue"
-msgstr "Report overdue"

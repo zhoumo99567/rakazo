@@ -20,6 +20,15 @@ export const TaskSummarySchema = z.object({
   status: TaskStatusSchema,
   prompt: z.string(),
   completedAt: IsoDate.nullable(),
+  createdAt: IsoDate.optional(),
+  botName: z.string().optional(),
+  source: z
+    .object({
+      kind: z.enum(["user", "bot", "routine", "system"]),
+      botName: z.string().nullable().optional(),
+    })
+    .optional(),
+  childCount: z.number().int().nonnegative().optional(),
   latestReport: z
     .object({ text: z.string(), reportedAt: IsoDate, kind: z.string() })
     .nullable()

@@ -529,8 +529,8 @@ msgid "All statuses"
 msgstr ""
 
 #: src/pages/shell/bot-tasks.tsx
-msgid "All tasks"
-msgstr ""
+#~ msgid "All tasks"
+#~ msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "All time"
@@ -728,6 +728,14 @@ msgstr "외부 이메일을 보내기 전에 확인"
 msgid "Ask the server owner to configure this provider."
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Assigned by {name}"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Assigned by a bot"
+msgstr ""
+
 #. placeholder {0}: preset.time
 #: src/pages/RoutineSchedule.tsx
 msgid "at {0}"
@@ -799,6 +807,7 @@ msgstr "아바타"
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-tasks.tsx
 msgid "Back"
 msgstr "뒤로"
 
@@ -2306,6 +2315,10 @@ msgstr "이 이메일은 가입이 허용되지 않습니다"
 msgid "Email verification required"
 msgstr "이메일 인증이 필요합니다"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Ended"
+msgstr ""
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
 msgstr ""
@@ -2832,6 +2845,14 @@ msgstr "마지막 확인 {0}: 변경 없음"
 msgid "Later"
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Latest first"
+msgstr ""
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Latest report"
+msgstr ""
+
 #: src/components/computer/TerminalApp.tsx
 msgid "Launched {app}"
 msgstr ""
@@ -2913,6 +2934,10 @@ msgstr "미리보기를 불러오는 중…"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Loading rules…"
 msgstr "확인 규칙을 불러오는 중…"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Loading tasks"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Loading tools…"
@@ -3702,6 +3727,11 @@ msgstr "API 키를 붙여넣은 뒤 다시 테스트하세요."
 msgid "Paused"
 msgstr "일시 중지됨"
 
+#. placeholder {0}: task.pendingMessageCount
+#: src/pages/shell/bot-tasks.tsx
+msgid "Pending messages: {0}"
+msgstr "Pending messages: {0}"
+
 #: src/components/call/VoiceChatCard.tsx
 msgid "Phone call"
 msgstr ""
@@ -4048,6 +4078,10 @@ msgstr ""
 msgid "Replying to {0}"
 msgstr ""
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Report overdue"
+msgstr "Report overdue"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
 msgstr ""
@@ -4285,6 +4319,10 @@ msgstr "저장 중…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "예 또는 아니요로 답하거나 문장으로 답해 주세요."
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Scheduled task"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4627,6 +4665,10 @@ msgstr ""
 msgid "Start recording"
 msgstr "작업 녹화 시작"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "Started by you"
+msgstr ""
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "시작 중"
@@ -4715,9 +4757,17 @@ msgstr "전환 중…"
 msgid "System"
 msgstr "시스템"
 
+#: src/pages/shell/bot-tasks.tsx
+msgid "System task"
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Take control"
 msgstr "제어권 가져오기"
+
+#: src/pages/shell/bot-tasks.tsx
+msgid "Task timeline"
+msgstr ""
 
 #: src/pages/shell/bot-tasks.tsx
 msgid "Tasks"
@@ -5381,11 +5431,3 @@ msgstr "사용 중인 OpenRouter"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
-
-#: src/pages/shell/bot-tasks.tsx
-msgid "Pending messages: {0}"
-msgstr "Pending messages: {0}"
-
-#: src/pages/shell/bot-tasks.tsx
-msgid "Report overdue"
-msgstr "Report overdue"

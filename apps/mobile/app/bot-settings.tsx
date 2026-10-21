@@ -560,11 +560,6 @@ export default function BotSettingsScreen() {
             value={autoSpeak}
           />
         </View>
-        <NativeActionButton
-          label={t("Tasks")}
-          prominence="plain"
-          onPress={() => router.push({ pathname: "/bot-tasks", params: { botId } })}
-        />
         <MenuPicker
           label={t("Role")}
           choices={[

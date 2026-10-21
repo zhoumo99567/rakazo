@@ -191,6 +191,15 @@ export default function BotProfile() {
           />
         </SettingsGroup>
       ) : null}
+      <SettingsGroup>
+        <SettingsRow
+          key="tasks"
+          accessibilityRole="button"
+          chevron="right"
+          title={t("Tasks")}
+          onPress={() => router.push({ pathname: "/bot-tasks", params: { botId } })}
+        />
+      </SettingsGroup>
     </ScrollView>
   );
 }

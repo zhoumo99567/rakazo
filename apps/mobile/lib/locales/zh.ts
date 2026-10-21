@@ -1,4 +1,12 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Assigned by {name}": "由 {name} 派发",
+  "Assigned by a bot": "Bot 派发",
+  "Started by you": "你发起",
+  "Scheduled task": "定时任务",
+  "System task": "系统任务",
+  "Hide details": "收起详情",
+  Ended: "结束于",
+
   "Resource limits": "资源上限",
   "CPU cores": "CPU 核数",
   "Memory (MiB)": "内存（MiB）",

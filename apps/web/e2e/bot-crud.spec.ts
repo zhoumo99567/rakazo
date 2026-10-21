@@ -106,11 +106,6 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(settings.getByRole("button", { name: "Reset computer" })).toHaveCount(0);
   await expect(settings.getByRole("button", { name: "Update computer" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "27a-settings-panel");
-  await settings.getByText("Advanced", { exact: true }).click();
-  const role = settings.getByRole("combobox", { name: "Role", exact: true });
-  await expect(role).toHaveValue("member");
-  await role.selectOption("chief");
-  await expect(role).toHaveValue("chief");
   await page.route("**/rpc/tasks/list", (route) =>
     route.fulfill({
       json: {
@@ -122,6 +117,9 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
               parentTaskId: null,
               status: "running",
               prompt: "Verify the delegated report",
+              createdAt: "2026-01-01T10:00:00.000Z",
+              source: { kind: "bot", botName: "Chief" },
+              childCount: 0,
               completedAt: null,
               latestReport: {
                 text: "Source checks complete; validating the final report.",
@@ -144,8 +142,15 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(settings.getByText("Pending messages: 1")).toBeVisible();
   await expect(settings.getByText("Report overdue", { exact: true })).toBeVisible();
   await expect(settings.getByRole("button", { name: "Refresh", exact: true })).toBeVisible();
-  await captureScreenshot(page, testInfo, "27d-chief-role-and-tasks");
+  await expect(settings.getByText("Assigned by Chief", { exact: true })).toBeVisible();
+  await expect(modelSelect).toBeHidden();
+  await captureScreenshot(page, testInfo, "27d-task-timeline");
   await page.unroute("**/rpc/tasks/list");
+  await settings.getByText("Advanced", { exact: true }).click();
+  const role = settings.getByRole("combobox", { name: "Role", exact: true });
+  await expect(role).toHaveValue("member");
+  await role.selectOption("chief");
+  await expect(role).toHaveValue("chief");
   const disabledTools = settings.getByLabel("Disabled tools");
   await expect(disabledTools).toBeVisible();
   await disabledTools.fill("not_a_tool");

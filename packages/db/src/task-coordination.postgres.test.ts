@@ -321,6 +321,10 @@ postgres("durable bot coordination", () => {
     });
     const actor = { ...owner, email: "owner@example.com", isDeploymentOwner: false };
     expect((await listOwnedTasks(prisma, actor, { botId: worker.id })).tasks[0]).toMatchObject({
+      source: { kind: "bot", botName: "Chief" },
+      botName: "Worker",
+      childCount: 0,
+      createdAt: expect.any(String),
       latestReport: { text: "Still alive", kind: "status" },
       pendingMessageCount: 1,
       reportOverdue: false,
@@ -576,7 +580,13 @@ postgres("durable bot coordination", () => {
     const actor = { ...owner, email: "owner@example.com", isDeploymentOwner: false };
     const foreignSpace = { ...actor, spaceId: "another-space" };
     const foreignUser = { ...actor, userId: "another-owner" };
-    expect((await listOwnedTasks(prisma, actor, { botId: chief.id })).tasks).toHaveLength(1);
+    expect((await listOwnedTasks(prisma, actor, { botId: chief.id })).tasks).toEqual([
+      expect.objectContaining({
+        source: { kind: "user" },
+        childCount: 0,
+        createdAt: expect.any(String),
+      }),
+    ]);
     for (const other of [foreignSpace, foreignUser]) {
       expect((await listOwnedTasks(prisma, other, { botId: chief.id })).tasks).toEqual([]);
       await expect(listOwnedTasks(prisma, other, { cursor: run.taskId })).rejects.toThrow();

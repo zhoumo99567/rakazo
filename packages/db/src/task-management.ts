@@ -42,7 +42,15 @@ export async function listOwnedTasks(
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: 41,
     include: {
-      _count: { select: { inbox: { where: { consumedAt: null, deliveryClass: "actionable" } } } },
+      bot: { select: { name: true } },
+      parent: { select: { userId: true, spaceId: true, bot: { select: { name: true } } } },
+      runs: { orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: 1, select: { trigger: true } },
+      _count: {
+        select: {
+          inbox: { where: { consumedAt: null, deliveryClass: "actionable" } },
+          children: { where: { userId: actor.userId, spaceId: actor.spaceId } },
+        },
+      },
     },
   });
   const page = rows.slice(0, 40);
@@ -55,6 +63,25 @@ export async function listOwnedTasks(
         status: task.status,
         prompt: task.originalPrompt ?? task.prompt,
         completedAt: task.completedAt?.toISOString() ?? null,
+        createdAt: task.createdAt.toISOString(),
+        botName: task.bot.name,
+        source:
+          task.parentTaskId || task.delegatedByRunId
+            ? {
+                kind: "bot",
+                botName:
+                  task.parent?.userId === actor.userId && task.parent.spaceId === actor.spaceId
+                    ? task.parent.bot.name
+                    : null,
+              }
+            : {
+                kind: ["user", "follow_up"].includes(task.runs[0]?.trigger ?? "")
+                  ? "user"
+                  : task.runs[0]?.trigger === "routine"
+                    ? "routine"
+                    : "system",
+              },
+        childCount: task._count.children,
         latestReport: task.latestReport ?? null,
         pendingMessageCount: ["completed", "failed", "cancelled"].includes(task.status)
           ? 0
