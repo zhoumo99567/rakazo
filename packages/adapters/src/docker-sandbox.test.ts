@@ -671,3 +671,31 @@ describe("Docker sandbox stopped containers", () => {
     ).resolves.toMatchObject({ url: null });
   });
 });
+
+it("passes computer limits through provision and updates the identified container in place", async () => {
+  const limits = { cpus: 4, memoryMiB: 8192 };
+  const fetchMock = vi.fn(async (url: string, _init?: RequestInit) =>
+    Response.json(url.endsWith("/computers") ? { id: "container-1" } : limits),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const ref = await provider.provision(
+      { botId: "team-space", homePath: "/data/homes/team-space", resourceLimits: limits },
+      context,
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      resourceLimits: limits,
+    });
+    await expect(provider.setResourceLimits(ref, limits, context)).resolves.toEqual(limits);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "http://supervisor.test/computers/container-1/resources",
+    );
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: "POST",
+      headers: { "x-rakazo-bot-id": "team-space", "x-rakazo-space-id": "workspace" },
+    });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

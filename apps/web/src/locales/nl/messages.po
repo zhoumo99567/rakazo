@@ -285,6 +285,10 @@ msgstr "{workingBotName} is aan het werk"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "0 currently means unlimited. Enter positive limits to save."
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
 msgstr "Van alles een beetje"
@@ -643,6 +647,10 @@ msgstr "API-sleutelheader"
 msgid "Appearance"
 msgstr "Weergave"
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "Applies to every bot using this team computer."
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Apply"
 msgstr "Toepassen"
@@ -941,6 +949,7 @@ msgstr "Kan afbeeldingen niet lezen"
 
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/components/ComputerResourceSettings.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
@@ -1366,6 +1375,14 @@ msgstr "Gekoppeld. Zijn tools zijn beschikbaar vanaf je volgende bericht."
 msgid "Connecting…"
 msgstr "Bezig met verbinden…"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection"
+msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection name"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Connection test failed."
 msgstr "Verbindingstest mislukt."
@@ -1717,6 +1734,10 @@ msgstr "De modelserver is niet bereikbaar."
 msgid "Could not reach the server"
 msgstr "De server is niet bereikbaar"
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "Could not read computer limits"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
@@ -1858,6 +1879,10 @@ msgstr "Agenttoegang bijwerken mislukt"
 msgid "Could not update computer"
 msgstr "Computer bijwerken mislukt"
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "Could not update computer limits"
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Could not update reaction"
 msgstr "Reactie bijwerken mislukt"
@@ -1889,6 +1914,10 @@ msgstr "Berichtinstellingen bijwerken mislukt"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Couldn't update your timezone"
 msgstr "Je tijdzone bijwerken mislukt"
+
+#: src/components/ComputerResourceSettings.tsx
+msgid "CPU cores"
+msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/Shell.tsx
@@ -2941,6 +2970,10 @@ msgstr "Laag"
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr "Kleine letters, cijfers, koppeltekens en underscores, beginnend met een letter."
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "Lowering memory can terminate programs. Save your work first."
+msgstr ""
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Make sure nothing is still running on this computer."
 msgstr "Zorg dat er niets meer op deze computer draait."
@@ -3033,6 +3066,10 @@ msgstr "Leden ({0})"
 #: src/pages/SettingsOverlay.tsx
 msgid "Memory"
 msgstr "Geheugen"
+
+#: src/components/ComputerResourceSettings.tsx
+msgid "Memory (MiB)"
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Memory scope"
@@ -3142,6 +3179,10 @@ msgstr "Model \"{modelId}\" stond niet in de lijst."
 #: src/pages/Onboarding.tsx
 msgid "Model id"
 msgstr "Model-id"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Model ID"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Model options"
@@ -3256,6 +3297,10 @@ msgstr "Heeft jou nodig"
 #: src/pages/shell/bot-panel.tsx
 msgid "New bot"
 msgstr "Nieuwe bot"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "New connection"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4040,6 +4085,11 @@ msgstr "Bezig met opnieuw instellen…"
 msgid "Resize panel"
 msgstr "Paneel van grootte veranderen"
 
+#: src/components/ComputerMaintenanceActions.tsx
+#: src/components/ComputerResourceSettings.tsx
+msgid "Resource limits"
+msgstr ""
+
 #: src/components/DesktopUpdates.tsx
 msgid "Restart to update"
 msgstr "Herstarten om bij te werken"
@@ -4165,6 +4215,7 @@ msgid "Runs when this bot receives a verified message from this provider."
 msgstr "Draait wanneer deze bot een geverifieerd bericht van deze aanbieder ontvangt."
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerResourceSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/Board.tsx
 #: src/pages/ExternalConversationSettings.tsx
@@ -4220,6 +4271,7 @@ msgid "Saving..."
 msgstr "Bezig met opslaan..."
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerResourceSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/ModelBackupsSettings.tsx

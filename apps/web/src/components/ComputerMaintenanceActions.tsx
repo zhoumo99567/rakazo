@@ -20,6 +20,7 @@ import { useState } from "react";
 import { computerUpdates } from "../lib/computer-updates";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
+import { ComputerResourceSettings } from "./ComputerResourceSettings";
 
 type Action = "recover" | "reset" | "update";
 
@@ -33,6 +34,7 @@ export function ComputerMaintenanceActions({
   onChanged: () => Promise<void>;
 }) {
   const { t } = useLingui();
+  const [resourcesOpen, setResourcesOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pending, setPending] = useState<Action | null>(null);
   const [confirmAction, setConfirmAction] = useState<"reset" | "recover" | null>(null);
@@ -149,6 +151,17 @@ export function ComputerMaintenanceActions({
           data-testid="computer-more-menu"
           className="w-auto min-w-44"
         >
+          {computer.kind === "docker" ? (
+            <DropdownMenuItem
+              disabled={busy || pending !== null}
+              onClick={() => {
+                setMenuOpen(false);
+                setResourcesOpen(true);
+              }}
+            >
+              <Trans>Resource limits</Trans>
+            </DropdownMenuItem>
+          ) : null}
           {showRecover ? (
             <DropdownMenuItem
               closeOnClick={false}
@@ -203,6 +216,14 @@ export function ComputerMaintenanceActions({
           {error ? <p className="px-1.5 py-1 text-[12.5px] text-destructive">{error}</p> : null}
         </DropdownMenuContent>
       </DropdownMenu>
+      {resourcesOpen ? (
+        <ComputerResourceSettings
+          botId={botId}
+          team={computer.mode === "team"}
+          onClose={() => setResourcesOpen(false)}
+          onChanged={onChanged}
+        />
+      ) : null}
       {confirmationDialog}
     </>
   );

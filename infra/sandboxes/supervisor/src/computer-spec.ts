@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import path from "node:path";
+import type { ComputerResourceLimits } from "@rakazo/contracts";
 import { MAX_DESKTOP_DISPLAY, screenPorts } from "@rakazo/core/node/desktop-runtime";
 import type Docker from "dockerode";
 
@@ -324,6 +325,7 @@ export function homeVolumeMatches(
 }
 
 export interface ComputerCreateInput {
+  resourceLimits?: ComputerResourceLimits;
   name: string;
   image: string;
   botId: string;
@@ -394,6 +396,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       CapDrop: ["ALL"],
       SecurityOpt: ["no-new-privileges:true"],
       ...computerResourceLimits(),
+      ...(input.resourceLimits ? dockerResourceLimits(input.resourceLimits) : {}),
       ReadonlyPaths: ["/usr/share/novnc"],
       AutoRemove: false,
       NetworkMode: input.networkMode ?? "bridge",
@@ -576,4 +579,16 @@ function mapKey(key: string) {
   if (lower === "shift") return "shift";
   if (lower === "meta" || lower === "cmd" || lower === "super") return "super";
   return key;
+}
+
+export function dockerResourceLimits(limits: ComputerResourceLimits) {
+  const memory = limits.memoryMiB * 1024 * 1024;
+  return { Memory: memory, MemorySwap: memory, NanoCpus: Math.round(limits.cpus * 1e9) };
+}
+
+export function readDockerResourceLimits(config: { Memory?: number; NanoCpus?: number }) {
+  return {
+    cpus: (config.NanoCpus ?? 0) / 1e9,
+    memoryMiB: Math.ceil((config.Memory ?? 0) / (1024 * 1024)),
+  };
 }

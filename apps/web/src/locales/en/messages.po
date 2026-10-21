@@ -285,6 +285,10 @@ msgstr "{workingBotName} is working"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "0 currently means unlimited. Enter positive limits to save."
+msgstr "0 currently means unlimited. Enter positive limits to save."
+
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
 msgstr "A bit of everything"
@@ -643,6 +647,10 @@ msgstr "API key header"
 msgid "Appearance"
 msgstr "Appearance"
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "Applies to every bot using this team computer."
+msgstr "Applies to every bot using this team computer."
+
 #: src/components/AskCard.tsx
 msgid "Apply"
 msgstr "Apply"
@@ -941,6 +949,7 @@ msgstr "Can't read images"
 
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/components/ComputerResourceSettings.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
@@ -1725,6 +1734,10 @@ msgstr "Could not reach the model server."
 msgid "Could not reach the server"
 msgstr "Could not reach the server"
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "Could not read computer limits"
+msgstr "Could not read computer limits"
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
@@ -1866,6 +1879,10 @@ msgstr "Could not update agent access"
 msgid "Could not update computer"
 msgstr "Could not update computer"
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "Could not update computer limits"
+msgstr "Could not update computer limits"
+
 #: src/pages/Shell.tsx
 msgid "Could not update reaction"
 msgstr "Could not update reaction"
@@ -1897,6 +1914,10 @@ msgstr "Couldn't update messaging settings"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Couldn't update your timezone"
 msgstr "Couldn't update your timezone"
+
+#: src/components/ComputerResourceSettings.tsx
+msgid "CPU cores"
+msgstr "CPU cores"
 
 #: src/pages/Board.tsx
 #: src/pages/Shell.tsx
@@ -2949,6 +2970,10 @@ msgstr "Low"
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "Lowering memory can terminate programs. Save your work first."
+msgstr "Lowering memory can terminate programs. Save your work first."
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Make sure nothing is still running on this computer."
 msgstr "Make sure nothing is still running on this computer."
@@ -3041,6 +3066,10 @@ msgstr "Members ({0})"
 #: src/pages/SettingsOverlay.tsx
 msgid "Memory"
 msgstr "Memory"
+
+#: src/components/ComputerResourceSettings.tsx
+msgid "Memory (MiB)"
+msgstr "Memory (MiB)"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Memory scope"
@@ -4056,6 +4085,11 @@ msgstr "Resetting…"
 msgid "Resize panel"
 msgstr "Resize panel"
 
+#: src/components/ComputerMaintenanceActions.tsx
+#: src/components/ComputerResourceSettings.tsx
+msgid "Resource limits"
+msgstr "Resource limits"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Restart to update"
 msgstr "Restart to update"
@@ -4181,6 +4215,7 @@ msgid "Runs when this bot receives a verified message from this provider."
 msgstr "Runs when this bot receives a verified message from this provider."
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerResourceSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/Board.tsx
 #: src/pages/ExternalConversationSettings.tsx
@@ -4236,6 +4271,7 @@ msgid "Saving..."
 msgstr "Saving..."
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerResourceSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/ModelBackupsSettings.tsx

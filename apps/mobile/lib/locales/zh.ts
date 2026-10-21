@@ -1,4 +1,16 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Resource limits": "资源上限",
+  "CPU cores": "CPU 核数",
+  "Memory (MiB)": "内存（MiB）",
+  "CPU cores and memory": "CPU 核数和内存",
+  "Applies to every bot using this team computer.": "此设置适用于共用这台团队电脑的所有 Bot。",
+  "0 currently means unlimited. Enter positive limits to save.":
+    "当前为 0 表示不限制。请输入大于 0 的上限后保存。",
+  "Lowering memory can terminate programs. Save your work first.":
+    "降低内存上限可能导致程序终止，请先保存工作。",
+  "Could not read computer limits": "无法读取电脑资源上限",
+  "Could not update computer limits": "无法更新电脑资源上限",
+
   Refresh: "刷新",
   "Load more": "加载更多",
   "Could not cancel task": "无法取消任务",

@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
+import { ComputerResourceUpdateSchema } from "@rakazo/contracts";
 import {
   boundedSandboxCommandTimeoutMs,
   readBoundedJsonResponse,
@@ -37,10 +38,12 @@ import {
   containerCreateOptions,
   containerNameFor,
   controlPortPublicationMatches,
+  dockerResourceLimits,
   homeVolumeMatches,
   hostComputerUser,
   legacyNetworkOwnedSolelyBy,
   publishedLoopbackControlHostPort,
+  readDockerResourceLimits,
   resolveComputerControlEndpoint,
   resolveComputerDns,
   resolveComputerEgressMode,
@@ -198,6 +201,7 @@ app.post("/computers", async (c) => {
     .object({
       botId: z.string().min(1),
       homePath: z.string().min(1),
+      resourceLimits: ComputerResourceUpdateSchema.optional(),
       spaceId: z.string().min(1),
     })
     .parse(await c.req.json());
@@ -274,6 +278,7 @@ app.post("/computers", async (c) => {
           (!reconnect ||
             (await reconnectBotComputer(existing, body.botId, networkOwner, Boolean(endpoint))))
         ) {
+          if (body.resourceLimits) await existing.update(dockerResourceLimits(body.resourceLimits));
           const started = !info.State.Running;
           if (started) await existing.start();
           return c.json({
@@ -330,6 +335,7 @@ app.post("/computers", async (c) => {
           container = await docker.createContainer(
             containerCreateOptions({
               name,
+              resourceLimits: body.resourceLimits,
               image: COMPUTER_IMAGE,
               botId: body.botId,
               spaceId: body.spaceId,
@@ -365,6 +371,53 @@ app.post("/computers", async (c) => {
     const message = error instanceof Error ? error.message : String(error);
     return c.json({ error: message }, 500);
   }
+});
+
+app.get("/computers/resource-defaults", (c) =>
+  c.json(readDockerResourceLimits(computerResourceLimits())),
+);
+
+app.get("/computers/:id/resources", async (c) => {
+  try {
+    const { info } = await managedContainer(
+      c.req.param("id"),
+      c.req.header("x-rakazo-bot-id"),
+      c.req.header("x-rakazo-space-id"),
+    );
+    return c.json(readDockerResourceLimits(info.HostConfig));
+  } catch {
+    return c.json({ error: "Computer not found" }, 404);
+  }
+});
+
+app.post("/computers/:id/resources", async (c) => {
+  const parsed = ComputerResourceUpdateSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Invalid CPU or memory limit" }, 400);
+  const botId = c.req.header("x-rakazo-bot-id");
+  if (!botId) return c.json({ error: "Missing computer identity" }, 400);
+  return withBotLifecycleLock(botId, async () => {
+    try {
+      const { container } = await managedContainer(
+        c.req.param("id"),
+        botId,
+        c.req.header("x-rakazo-space-id"),
+      );
+      await container.update(dockerResourceLimits(parsed.data));
+      const info = await container.inspect();
+      return c.json(readDockerResourceLimits(info.HostConfig));
+    } catch (error) {
+      if (error instanceof ComputerIdentityError)
+        return c.json({ error: "Computer not found" }, 404);
+      getLogger().error("computer resource update", error);
+      return c.json(
+        {
+          error:
+            "Docker could not apply the limits. Check available resources and current memory usage.",
+        },
+        409,
+      );
+    }
+  });
 });
 
 app.get("/computers/:id", async (c) => {

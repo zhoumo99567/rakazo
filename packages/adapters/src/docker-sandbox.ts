@@ -17,6 +17,8 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
+import type { ComputerResourceLimits } from "@rakazo/contracts";
+import { ComputerResourceLimitsSchema } from "@rakazo/contracts";
 import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
 import { outgoingCorrelationHeaders } from "@rakazo/logging";
 import {
@@ -142,8 +144,48 @@ export class DockerSandboxProvider implements SandboxProvider {
     };
   }
 
+  async resourceLimits(
+    computer: ComputerRef | null,
+    context: AdapterContext,
+  ): Promise<ComputerResourceLimits> {
+    const res = await fetch(
+      this.url(
+        computer
+          ? `/computers/${encodeURIComponent(computer.id)}/resources`
+          : "/computers/resource-defaults",
+      ),
+      {
+        headers: this.headers(context, computer?.botId),
+        signal: context.signal,
+      },
+    );
+    if (!res.ok)
+      throw new Error(
+        `Could not read computer limits: ${res.status} ${await safeBody(res, context.signal)}`,
+      );
+    return ComputerResourceLimitsSchema.parse(await readSandboxJson(res, context.signal));
+  }
+
+  async setResourceLimits(
+    computer: ComputerRef,
+    limits: ComputerResourceLimits,
+    context: AdapterContext,
+  ): Promise<ComputerResourceLimits> {
+    const res = await fetch(this.url(`/computers/${encodeURIComponent(computer.id)}/resources`), {
+      method: "POST",
+      headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
+      body: JSON.stringify(ComputerResourceLimitsSchema.parse(limits)),
+      signal: context.signal,
+    });
+    if (!res.ok)
+      throw new Error(
+        `Could not update computer limits: ${res.status} ${await safeBody(res, context.signal)}`,
+      );
+    return ComputerResourceLimitsSchema.parse(await readSandboxJson(res, context.signal));
+  }
+
   async provision(
-    request: { botId: string; homePath: string },
+    request: { botId: string; homePath: string; resourceLimits?: ComputerResourceLimits },
     context: AdapterContext,
   ): Promise<ComputerRef> {
     const res = await fetch(this.url("/computers"), {
@@ -152,6 +194,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       body: JSON.stringify({
         botId: request.botId,
         homePath: request.homePath,
+        resourceLimits: request.resourceLimits,
         spaceId: context.spaceId,
       }),
       signal: context.signal,

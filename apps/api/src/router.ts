@@ -139,6 +139,7 @@ import type {
   Bot,
   BotSecretMetadata,
   ComputerReleaseReason,
+  ComputerResourceLimits,
   ComputerStatus,
   ExportManifest,
   McpServer,
@@ -153,6 +154,7 @@ import {
   attachmentSizeLabel,
   BotSecretAuth,
   ComputerCommandSchema,
+  ComputerResourceLimitsSchema,
   canonicalPiProviderId,
   foldComputerCommands,
   IntegrationProviderIdSchema,
@@ -2694,6 +2696,104 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     computer: {
+      resources: authed.computer.resources.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.computer) throw new IsolationError();
+        if (bot.computer.kind !== "docker" || !deps.sandbox.resourceLimits) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "This computer does not support resource limits",
+          });
+        }
+        // Inspect an existing container: do not present changed deployment defaults as live limits.
+        if (bot.computer.providerRef)
+          return deps.sandbox.resourceLimits(
+            toComputerRef(bot.computer),
+            computerContext(context.actor, bot.id, "resources"),
+          );
+        if (bot.computer.resourceLimits)
+          return ComputerResourceLimitsSchema.parse(bot.computer.resourceLimits);
+        return deps.sandbox.resourceLimits(
+          null,
+          computerContext(context.actor, bot.id, "resources"),
+        );
+      }),
+      setResources: authed.computer.setResources.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const computer = bot.computer;
+        if (!computer) throw new IsolationError();
+        if (
+          computer.kind !== "docker" ||
+          !deps.sandbox.setResourceLimits ||
+          !deps.sandbox.resourceLimits
+        ) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "This computer does not support resource limits",
+          });
+        }
+        const readLimits = deps.sandbox.resourceLimits.bind(deps.sandbox);
+        const writeLimits = deps.sandbox.setResourceLimits.bind(deps.sandbox);
+        return deps.prisma.$transaction(
+          async (tx) => {
+            const reservation = `resources:${randomUUID()}`;
+            const claimed = await tx.computer.updateMany({
+              where: {
+                id: computer.id,
+                maintenanceId: null,
+                providerRef: computer.providerRef,
+                state: { notIn: ["booting", "suspending"] },
+                controlHolder: "none",
+                executionLeases: { none: { expiresAt: { gt: new Date() } } },
+                bots: {
+                  none: {
+                    OR: [
+                      { computerSwitching: true },
+                      { runs: { some: { status: { in: [...ACTIVE_RUN_STATUSES] } } } },
+                    ],
+                  },
+                },
+              },
+              data: { maintenanceId: reservation },
+            });
+            if (claimed.count !== 1)
+              throw new ORPCError("CONFLICT", {
+                message: "Stop active tasks and release computer control before changing limits",
+              });
+            const ctx = computerContext(context.actor, bot.id, reservation);
+            ctx.signal = AbortSignal.timeout(15000);
+            const ref = computer.providerRef ? toComputerRef(computer) : null;
+            let previous: ComputerResourceLimits | undefined;
+            let applied = false;
+            try {
+              if (ref) {
+                previous = await readLimits(ref, ctx);
+                await writeLimits(ref, input.limits, ctx);
+                applied = true;
+              }
+              await tx.computer.update({
+                where: { id: computer.id },
+                data: { resourceLimits: input.limits },
+              });
+              return input.limits;
+            } catch (error) {
+              if (applied && ref && previous && previous.cpus > 0 && previous.memoryMiB >= 6) {
+                await writeLimits(ref, previous, {
+                  ...ctx,
+                  signal: AbortSignal.timeout(15000),
+                }).catch((rollbackError) =>
+                  getLogger().error("computer limits rollback", rollbackError),
+                );
+              }
+              throw error;
+            } finally {
+              await tx.computer.updateMany({
+                where: { id: computer.id, maintenanceId: reservation },
+                data: { maintenanceId: null },
+              });
+            }
+          },
+          { timeout: 45000 },
+        );
+      }),
       status: authed.computer.status.handler(async ({ context, input }) =>
         computerStatus(deps, context.actor, input.botId),
       ),

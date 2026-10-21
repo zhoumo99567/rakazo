@@ -1,7 +1,7 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { ComputerStatus } from "@rakazo/contracts";
 import type { NativeStackNavigationOptions } from "expo-router";
-import { useNavigation } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
 import { useLayoutEffect, useState } from "react";
 import { Alert, Text, View } from "react-native";
 import { rpc } from "../lib/api";
@@ -27,6 +27,7 @@ export function ComputerMaintenanceActions({
   const tokens = useMobileTokens();
   const scheme = useResolvedAppearance();
   const navigation = useNavigation();
+  const router = useRouter();
   const [pending, setPending] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
   const busy = Boolean(computer?.busyBotName) || computer?.state === "booting" || pending !== null;
@@ -65,6 +66,21 @@ export function ComputerMaintenanceActions({
   }
 
   const actions = [
+    ...(computer?.kind === "docker"
+      ? [
+          {
+            id: "resources",
+            title: t("Resource limits"),
+            explanation: t("CPU cores and memory"),
+            destructive: false,
+            onPress: () =>
+              router.push({
+                pathname: "/computer-resources",
+                params: { botId, team: String(computer.mode === "team") },
+              }),
+          },
+        ]
+      : []),
     {
       id: "recover",
       title: t("Recover computer"),
@@ -122,7 +138,18 @@ export function ComputerMaintenanceActions({
     return () => {
       navigation.setOptions({ unstable_headerRightItems: () => [] });
     };
-  }, [navigation, hasComputer, canUpdate, busy, t, botId, onChanged]);
+  }, [
+    navigation,
+    hasComputer,
+    canUpdate,
+    busy,
+    t,
+    botId,
+    onChanged,
+    computer?.kind,
+    computer?.mode,
+    router,
+  ]);
 
   if (!computer) return null;
   return (

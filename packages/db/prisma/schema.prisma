@@ -1048,6 +1048,7 @@ model ComputerUpdate {
 }
 
 model Computer {
+  resourceLimits Json?
   screenGeneration        Int                      @default(0)
   id                      String                   @id @default(cuid())
   spaceId                 String

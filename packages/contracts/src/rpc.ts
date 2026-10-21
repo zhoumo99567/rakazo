@@ -22,6 +22,10 @@ import {
 } from "./board.js";
 import { BotSecretMetadata, BotSecretPutInput, StoredBotSecretName } from "./bot-secrets.js";
 import {
+  ComputerResourceLimitsSchema,
+  ComputerResourceUpdateSchema,
+} from "./computer-resources.js";
+import {
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
   AgentSecretInputSchema,
@@ -477,6 +481,10 @@ export const appContract = {
     markUnread: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
   },
   computer: {
+    resources: oc.input(botId).output(ComputerResourceLimitsSchema),
+    setResources: oc
+      .input(z.object({ botId: Id, limits: ComputerResourceUpdateSchema }))
+      .output(ComputerResourceLimitsSchema),
     status: oc.input(botId).output(ComputerStatusSchema),
     boot: oc.input(botId).output(ComputerStatusSchema),
     stop: oc.input(botId).output(ComputerStatusSchema),

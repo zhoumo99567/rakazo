@@ -1036,6 +1036,7 @@ describe("computer provisioning", () => {
           providerRef: fresh ? null : "provider-1",
           kind: "fake",
           scope: "dedicated",
+          resourceLimits: { cpus: 4, memoryMiB: 8192 },
           state: "stopped",
           controlLeaseId: null,
           updatedAt: new Date("2024-01-01T00:00:00.000Z"),
@@ -1066,6 +1067,10 @@ describe("computer provisioning", () => {
           context,
         ),
       ).rejects.toThrow("provider preparation failed");
+      expect(sandbox.provision).toHaveBeenCalledWith(
+        expect.objectContaining({ resourceLimits: { cpus: 4, memoryMiB: 8192 } }),
+        context,
+      );
       expect(prepare).toHaveBeenCalledWith(ref, context);
       expect(releaseScreen).toHaveBeenCalledWith(ref, context);
       expect(cleanup === "destroy" ? destroy : stop).toHaveBeenCalledWith(ref, context);

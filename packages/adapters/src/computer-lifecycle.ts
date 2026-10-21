@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
+import { ComputerResourceLimitsSchema } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, parseScreenLeaseId, screenLeaseId } from "@rakazo/core";
 import {
   expireComputerExecutionLeases,
@@ -327,6 +328,9 @@ export async function provisionComputer(
         homePath,
         providerRef: existing.providerRef ?? undefined,
         providerKind: existing.kind as ComputerRef["kind"],
+        resourceLimits: existing.resourceLimits
+          ? ComputerResourceLimitsSchema.parse(existing.resourceLimits)
+          : undefined,
       },
       context,
     );

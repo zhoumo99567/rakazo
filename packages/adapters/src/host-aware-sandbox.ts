@@ -13,6 +13,7 @@ import type {
   TerminalRequest,
   WorkspaceDirectoryRequest,
 } from "@rakazo/adapter-kit";
+import type { ComputerResourceLimits } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { cancelComputerRunWork } from "./computer-idle.js";
 import { manageComputerWorkspaceDirectories } from "./computer-workspace.js";
@@ -80,6 +81,24 @@ export class HostAwareSandbox implements SandboxProvider {
     return computer.kind === "desktop" ? this.host : this.isolated;
   }
 
+  async resourceLimits(computer: ComputerRef | null, context: AdapterContext) {
+    const provider = computer ? this.route(computer) : this.isolated;
+    if (!provider.resourceLimits)
+      throw new Error("Resource limits are unavailable on this computer");
+    return provider.resourceLimits(computer, context);
+  }
+
+  async setResourceLimits(
+    computer: ComputerRef,
+    limits: ComputerResourceLimits,
+    context: AdapterContext,
+  ) {
+    const provider = this.route(computer);
+    if (!provider.setResourceLimits)
+      throw new Error("Resource limits are unavailable on this computer");
+    return provider.setResourceLimits(computer, limits, context);
+  }
+
   async provisionKind() {
     const provider = (await this.hostEnabled()) ? this.host : this.isolated;
     return provider.describe().id as ComputerRef["kind"];
@@ -91,6 +110,7 @@ export class HostAwareSandbox implements SandboxProvider {
       homePath: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      resourceLimits?: ComputerResourceLimits;
     },
     context: AdapterContext,
   ) {

@@ -1,3 +1,4 @@
+import type { ComputerResourceLimits } from "@rakazo/contracts";
 import type {
   AdapterContext,
   AdapterDescriptor,
@@ -90,6 +91,18 @@ import type {
 } from "./types.js";
 
 export interface SandboxProvider {
+  /** Read effective limits, or deployment defaults when no container exists yet. */
+  resourceLimits?(
+    computer: ComputerRef | null,
+    context: AdapterContext,
+  ): Promise<ComputerResourceLimits>;
+  /** Update a container in place; providers without this capability omit the method. */
+  setResourceLimits?(
+    computer: ComputerRef,
+    limits: ComputerResourceLimits,
+    context: AdapterContext,
+  ): Promise<ComputerResourceLimits>;
+
   /** True when every running minute is billed, so the active-lifetime cap applies. */
   billsWhileRunning?(computer: ComputerRef): boolean;
   describe(): AdapterDescriptor<SandboxCapabilities>;
@@ -117,6 +130,7 @@ export interface SandboxProvider {
       homePath: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      resourceLimits?: ComputerResourceLimits;
     },
     context: AdapterContext,
   ): Promise<ComputerRef>;

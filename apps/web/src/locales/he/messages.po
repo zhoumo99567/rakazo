@@ -285,6 +285,10 @@ msgstr "{workingBotName} עובד"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "0 currently means unlimited. Enter positive limits to save."
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
 msgstr "קצת מהכול"
@@ -643,6 +647,10 @@ msgstr "header של מפתח API"
 msgid "Appearance"
 msgstr "מראה"
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "Applies to every bot using this team computer."
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Apply"
 msgstr "החלה"
@@ -941,6 +949,7 @@ msgstr "לא ניתן לקרוא תמונות"
 
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/components/ComputerResourceSettings.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
@@ -1366,6 +1375,14 @@ msgstr "מחובר. הכלים שלו יהיו זמינים החל מההודע�
 msgid "Connecting…"
 msgstr "מתחבר…"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection"
+msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connection name"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Connection test failed."
 msgstr "בדיקת החיבור נכשלה."
@@ -1717,6 +1734,10 @@ msgstr "אין גישה לשרת המודל."
 msgid "Could not reach the server"
 msgstr "אין גישה לשרת"
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "Could not read computer limits"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
@@ -1858,6 +1879,10 @@ msgstr "לא ניתן לעדכן את הגישה של הסוכן"
 msgid "Could not update computer"
 msgstr "לא ניתן לעדכן את המחשב"
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "Could not update computer limits"
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Could not update reaction"
 msgstr "לא ניתן לעדכן את האמוג׳י"
@@ -1888,6 +1913,10 @@ msgstr "לא ניתן לעדכן את הגדרות ההודעות"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Couldn't update your timezone"
+msgstr ""
+
+#: src/components/ComputerResourceSettings.tsx
+msgid "CPU cores"
 msgstr ""
 
 #: src/pages/Board.tsx
@@ -2941,6 +2970,10 @@ msgstr "נמוך"
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr "אותיות לטיניות קטנות, ספרות, מקפים וקווים תחתונים, ובהתחלה אות."
 
+#: src/components/ComputerResourceSettings.tsx
+msgid "Lowering memory can terminate programs. Save your work first."
+msgstr ""
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Make sure nothing is still running on this computer."
 msgstr "יש לוודא ששום דבר לא פועל עדיין במחשב הזה."
@@ -3033,6 +3066,10 @@ msgstr ""
 #: src/pages/SettingsOverlay.tsx
 msgid "Memory"
 msgstr "זיכרון"
+
+#: src/components/ComputerResourceSettings.tsx
+msgid "Memory (MiB)"
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Memory scope"
@@ -3142,6 +3179,10 @@ msgstr "המודל \"{modelId}\" לא הופיע ברשימה."
 #: src/pages/Onboarding.tsx
 msgid "Model id"
 msgstr "מזהה מודל"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Model ID"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Model options"
@@ -3256,6 +3297,10 @@ msgstr "נדרשת פעולה"
 #: src/pages/shell/bot-panel.tsx
 msgid "New bot"
 msgstr "בוט חדש"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "New connection"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4040,6 +4085,11 @@ msgstr "מאפס…"
 msgid "Resize panel"
 msgstr "שינוי גודל החלונית"
 
+#: src/components/ComputerMaintenanceActions.tsx
+#: src/components/ComputerResourceSettings.tsx
+msgid "Resource limits"
+msgstr ""
+
 #: src/components/DesktopUpdates.tsx
 msgid "Restart to update"
 msgstr "הפעלה מחדש לעדכון"
@@ -4165,6 +4215,7 @@ msgid "Runs when this bot receives a verified message from this provider."
 msgstr "רץ כשהבוט הזה מקבל הודעה מאומתת מהספק הזה."
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerResourceSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/Board.tsx
 #: src/pages/ExternalConversationSettings.tsx
@@ -4220,6 +4271,7 @@ msgid "Saving..."
 msgstr "שומר..."
 
 #: src/components/AskCard.tsx
+#: src/components/ComputerResourceSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/ModelBackupsSettings.tsx
