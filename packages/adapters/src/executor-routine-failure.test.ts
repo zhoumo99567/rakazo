@@ -1,7 +1,20 @@
 import { TransientModelError } from "@rakazo/adapter-kit";
+import type * as DbModule from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
+
+// Executor tests isolate task arbitration, which is exercised with real PostgreSQL.
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof DbModule>()),
+  claimThreadRun: (
+    prisma: PrismaClient,
+    _threadId: string,
+    _runId: string,
+    claim: Parameters<PrismaClient["run"]["updateMany"]>[0],
+  ) => prisma.run.updateMany(claim),
+}));
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),

@@ -41,6 +41,9 @@ export async function listOwnedTasks(
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: 41,
+    include: {
+      _count: { select: { inbox: { where: { consumedAt: null, deliveryClass: "actionable" } } } },
+    },
   });
   const page = rows.slice(0, 40);
   return {
@@ -52,6 +55,12 @@ export async function listOwnedTasks(
         status: task.status,
         prompt: task.originalPrompt ?? task.prompt,
         completedAt: task.completedAt?.toISOString() ?? null,
+        latestReport: task.latestReport ?? null,
+        pendingMessageCount: ["completed", "failed", "cancelled"].includes(task.status)
+          ? 0
+          : task._count.inbox,
+        reportOverdue:
+          task.status === "running" && Boolean(task.reportDueAt && task.reportOverdueAt),
       }),
     ),
     nextCursor: rows.length > 40 ? page.at(-1)!.id : null,

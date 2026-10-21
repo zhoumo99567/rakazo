@@ -30,6 +30,8 @@ export class ScriptedAgentRuntime implements AgentRuntime {
     running.set(request.runId, controller);
     const signal = context?.signal ?? controller.signal;
     try {
+      if (signal.aborted || controller.signal.aborted) return;
+      await request.onTaskMessagesDelivered?.(request.initialTaskMessageIds ?? []);
       if (shouldFail(request.prompt)) {
         throw new Error("Scripted run failure");
       }

@@ -15,6 +15,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Load more": "加载更多",
   "Could not cancel task": "无法取消任务",
   "Could not load tasks": "无法加载任务",
+  "Pending messages": "待处理消息",
+  "Report overdue": "汇报逾期",
   "No tasks": "暂无任务",
   "Waiting for an answer": "等待答复",
   "Waiting for bots": "等待其他机器人",

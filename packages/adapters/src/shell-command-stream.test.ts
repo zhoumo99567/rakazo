@@ -241,7 +241,7 @@ describe("deliverFinishedShells", () => {
 
     await Promise.resolve();
     expect(followUps).toEqual([]);
-    expect(pending).toEqual([]);
+    expect(pending).toEqual([completion]);
 
     release({ stdout: "logged in\n", stderr: "", code: 0 });
     await delivering;
@@ -250,6 +250,31 @@ describe("deliverFinishedShells", () => {
     ]);
     expect(followUps[0]).toContain("exit code: 0");
     expect(followUps[0]).toContain("logged in");
+  });
+
+  it("yields for task inbox messages without losing the running command or its final output", async () => {
+    let release!: (result: { stdout: string; stderr: string; code: number }) => void;
+    const command = new Promise<{ stdout: string; stderr: string; code: number }>((resolve) => {
+      release = resolve;
+    });
+    const pending = [command];
+    const output: string[] = [];
+    const wakeIfNeeded = async () => true;
+    await deliverFinishedShells(
+      (text) => output.push(text),
+      pending,
+      { toolResults: [] },
+      undefined,
+      { wakeIfNeeded, pollIntervalMs: 1 },
+    );
+    expect(pending).toEqual([command]);
+    expect(output).toEqual([]);
+    release({ stdout: "finished", stderr: "", code: 0 });
+    await deliverFinishedShells((text) => output.push(text), pending, { toolResults: [] });
+    await deliverFinishedShells((text) => output.push(text), pending, { toolResults: [] });
+    expect(output).toHaveLength(1);
+    expect(output[0]).toContain("finished");
+    expect(pending).toEqual([]);
   });
 
   it("does not wait on the turn that first received the live output", async () => {

@@ -11,6 +11,7 @@ import type { Runner, WorkerUtils } from "graphile-worker";
 import { makeWorkerUtils, run } from "graphile-worker";
 import type { Pool } from "pg";
 import { recordHistoryCompactAttemptsExhausted } from "./history-compaction.js";
+import { recoverExpiredRunJob } from "./run-job-recovery.js";
 
 // Share the caller's pg.Pool instead of opening a separate connectionString-based
 // pool per graphile-worker component: three independent pools per worker process
@@ -61,6 +62,11 @@ export class GraphileJobPublisher implements JobPublisher {
     const key = job.replaceKey;
     if (!job.keepExisting || !key) return undefined;
     const existing = await utils.withPgClient(async (client) => {
+      if (job.name === "run.continue") {
+        // Reconciliation retries expired runs. Only their old job lock is released;
+        // never unlock an entire worker, which may still own other live jobs.
+        await recoverExpiredRunJob(client, job.payload.runId, key);
+      }
       const found = await client.query<{ attempts: number; max_attempts: number }>(
         "select attempts, max_attempts from graphile_worker._private_jobs where key = $1",
         [key],

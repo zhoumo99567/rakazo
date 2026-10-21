@@ -3,15 +3,17 @@ import { runContinueJob, runJobKey } from "@rakazo/adapter-kit";
 import type { BotMessageIntent } from "@rakazo/contracts";
 import { TASK_PROTOCOL } from "@rakazo/contracts";
 import { BOT_MESSAGE_MAX_LENGTH, resolveBotAddress } from "@rakazo/core";
-import type { PrismaClient, TaskRunScope } from "@rakazo/db";
+import type { PrismaClient, TaskDelegationOptions, TaskRunScope } from "@rakazo/db";
 import {
   activeTaskRunWhere,
   cancelCoordinatedTask,
   delegateTask,
   IsolationError,
   lockBotManagement,
+  reconcileTaskContinuations,
   requireBotManager,
   sendTaskMessage,
+  TaskDelegationConflict,
   withTransactionRetry,
 } from "@rakazo/db";
 
@@ -40,16 +42,27 @@ async function targetBot(
 export async function handoffToTaskBot(
   deps: Deps,
   run: TaskRunScope,
-  input: { bot_id?: string; confirm_name?: string; message: string; deliveryKey: string },
+  input: Omit<TaskDelegationOptions, "botId" | "prompt"> & {
+    bot_id?: string;
+    confirm_name?: string;
+    message: string;
+  },
 ) {
   if (input.message.length > BOT_MESSAGE_MAX_LENGTH)
     throw new Error("Task description is too long.");
   const target = await targetBot(deps.prisma, run, input);
-  const child = await delegateTask(deps.prisma, run, {
-    botId: target.id,
-    prompt: input.message,
-    deliveryKey: input.deliveryKey,
-  });
+  let child: Awaited<ReturnType<typeof delegateTask>>;
+  try {
+    child = await delegateTask(deps.prisma, run, {
+      ...input,
+      botId: target.id,
+      prompt: input.message,
+      deliveryKey: input.deliveryKey,
+    });
+  } catch (error) {
+    if (error instanceof TaskDelegationConflict) return error.detail;
+    throw error;
+  }
   // The queued Run is durable; the existing reconciler repairs a lost enqueue.
   if (child.runId) await deps.jobs.enqueue(runContinueJob(child.runId)).catch(() => undefined);
   return {
@@ -67,6 +80,7 @@ export async function messageTaskBot(
     confirm_name?: string;
     task_id?: string;
     reply_to?: string;
+    progressChanged?: boolean;
     message: string;
     intent?: BotMessageIntent;
     deliveryKey: string;
@@ -104,8 +118,13 @@ export async function messageTaskBot(
     text: input.message,
     kind: input.intent ?? "request",
     replyToId: input.reply_to,
+    progressChanged: input.progressChanged,
     deliveryKey: input.deliveryKey,
   });
+  const ready = await reconcileTaskContinuations(deps.prisma, 1, targetTaskId).catch(() => []);
+  await Promise.all(
+    ready.map((id) => deps.jobs.enqueue(runContinueJob(id)).catch(() => undefined)),
+  );
   return { ok: true, taskId: targetTaskId, messageId: message.id, kind: message.kind };
 }
 
@@ -159,6 +178,14 @@ export async function taskStatus(deps: Deps, run: TaskRunScope, taskId = run.tas
     status: task.status,
     prompt: task.originalPrompt ?? task.prompt,
     completedAt: task.completedAt?.toISOString() ?? null,
+    workKey: task.workKey,
+    revisionOfTaskId: task.revisionOfTaskId,
+    reportIntervalMs: task.reportIntervalMs,
+    reportDueAt: task.reportDueAt?.toISOString() ?? null,
+    lastReportedAt: task.lastReportedAt?.toISOString() ?? null,
+    lastProgressAt: task.lastProgressAt?.toISOString() ?? null,
+    latestReport: task.latestReport,
+    reportOverdue: task.status === "running" && Boolean(task.reportDueAt && task.reportOverdueAt),
   });
   return {
     task: summary(target),

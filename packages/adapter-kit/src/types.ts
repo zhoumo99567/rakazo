@@ -508,6 +508,11 @@ export interface AgentRunRequest {
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
   /** Atomically claim durable user steering at the runtime's next safe turn boundary. */
   claimSteering?: (seenIds: string[]) => Promise<AgentSteeringMessage[]>;
+  /** Durable task data has a separate origin and cannot authorize user operations. */
+  initialTaskMessageIds?: string[];
+  claimTaskMessages?: (seenIds: string[]) => Promise<Array<{ id: string; text: string }>>;
+  /** Called only after the runtime has added this batch to the model context. */
+  onTaskMessagesDelivered?: (ids: string[]) => Promise<void>;
 }
 
 export interface ScriptedTurn {

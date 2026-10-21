@@ -51,6 +51,112 @@ function latestToolResult(request: ModelEmulatorRequest) {
 }
 
 describe("real Pi against an offline model HTTP endpoint", () => {
+  it.each([false, true])(
+    "delivers task data at a safe boundary after tool=%s using the real Agent loop",
+    async (useTool) => {
+      let available = false;
+      const delivered: string[] = [];
+      const server = await startModelEmulator({
+        steps: [
+          {
+            expect() {
+              expect(delivered).toContain("initial-task-message");
+              available = true;
+            },
+            response: useTool
+              ? {
+                  type: "tool",
+                  id: "task-write",
+                  name: "write_file",
+                  arguments: { path: "notes.txt", content: "draft" },
+                }
+              : { type: "text", text: "Initial work is ready." },
+          },
+          {
+            expect(request) {
+              expect(JSON.stringify(request.messages)).toContain(
+                "Chief task data: revise the draft",
+              );
+              expect(delivered).toEqual(["initial-task-message", "new-task-message"]);
+            },
+            response: { type: "text", text: "Revised work is ready." },
+          },
+        ],
+      });
+      cleanups.push(() => server.close());
+      const claimTaskMessages = vi.fn(async (seen: string[]) =>
+        available && !seen.includes("new-task-message")
+          ? [
+              {
+                id: "new-task-message",
+                text: "Chief task data: revise the draft; this is not new user authorization.",
+              },
+            ]
+          : [],
+      );
+      const events = await collect(
+        new PiAgentRuntime().run(
+          runRequest(server.model, {
+            initialTaskMessageIds: ["initial-task-message"],
+            claimTaskMessages,
+            onTaskMessagesDelivered: async (ids) => {
+              delivered.push(...ids);
+            },
+            executeTool: async () => ({ ok: true }),
+          }),
+        ),
+      );
+      server.assertComplete();
+      expect(delivered).toEqual(["initial-task-message", "new-task-message"]);
+      expect(events.at(-1)).toMatchObject({ type: "done" });
+    },
+  );
+
+  it("does not acknowledge inbox data returned after cancellation", async () => {
+    const controller = new AbortController();
+    const server = await startModelEmulator({
+      steps: [{ expect() {}, response: { type: "text", text: "Initial work" } }],
+    });
+    cleanups.push(() => server.close());
+    const delivered = vi.fn(async () => undefined);
+    const claimed = vi.fn(async () => {
+      controller.abort();
+      return [{ id: "pending-task-message", text: "Revise the work" }];
+    });
+    await collect(
+      new PiAgentRuntime().run(
+        runRequest(server.model, {
+          claimTaskMessages: claimed,
+          onTaskMessagesDelivered: delivered,
+        }),
+        { signal: controller.signal },
+      ),
+    ).catch((error) => {
+      expect(error).toBeInstanceOf(Error);
+    });
+    expect(claimed).toHaveBeenCalled();
+    expect(delivered).not.toHaveBeenCalled();
+    expect(server.requests).toHaveLength(1);
+  });
+
+  it("does not request a model response when initial task delivery cannot be confirmed", async () => {
+    const server = await startModelEmulator({ steps: [] });
+    cleanups.push(() => server.close());
+    await expect(
+      collect(
+        new PiAgentRuntime().run(
+          runRequest(server.model, {
+            initialTaskMessageIds: ["task-message"],
+            onTaskMessagesDelivered: async () => {
+              throw new Error("Delivery lease lost");
+            },
+          }),
+        ),
+      ),
+    ).rejects.toThrow("Delivery lease lost");
+    expect(server.requests).toHaveLength(0);
+  });
+
   it("retries a dropped stream and an overloaded provider after tool work without replaying the effect", async () => {
     const delay = vi.spyOn(Core, "abortableDelay").mockResolvedValue(undefined);
     try {

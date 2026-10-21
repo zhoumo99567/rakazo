@@ -9,13 +9,17 @@ import { loadRunHistoryMessages } from "./messages.js";
 import { provisionMessagingIdentity } from "./messaging.js";
 import {
   cancelCoordinatedTask,
+  claimTaskInbox,
   coordinatedRootData,
   delegateTask,
+  markTaskMessagesDelivered,
   reconcileTaskContinuations,
   sendTaskMessage,
   taskRunContext,
 } from "./task-coordination.js";
 import { cancelOwnedTask, listOwnedTasks } from "./task-management.js";
+import { reconcileTaskReports } from "./task-reporting.js";
+import { claimThreadRun } from "./task-run-claim.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const postgres = process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
@@ -109,7 +113,8 @@ postgres("durable bot coordination", () => {
     ) {
       // Pass a complete Prisma Run: extra timestamps must never become query predicates.
       const fullRun = { ...run, updatedAt: new Date(0), startedAt: null };
-      await taskRunContext(prisma, fullRun);
+      const context = await taskRunContext(prisma, fullRun);
+      await markTaskMessagesDelivered(prisma, fullRun, context?.messageIds ?? []);
     }
     return run;
   }
@@ -160,6 +165,381 @@ postgres("durable bot coordination", () => {
     expect(await finish(parent)).toMatchObject({ taskCompleted: false });
     expect(await prisma.task.findUnique({ where: { id: parent.taskId } })).toMatchObject({
       status: "waiting_children",
+    });
+  });
+
+  it("rejects concurrent duplicate work even with different operation keys", async () => {
+    const parent = await root();
+    const results = await Promise.allSettled([delegate(parent), delegate(parent)]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(await prisma.task.count({ where: { parentTaskId: parent.taskId } })).toBe(1);
+  });
+
+  it("replays independent work before checking the active set and rejects changed work", async () => {
+    const parent = await root();
+    const input = {
+      botId: worker.id,
+      prompt: "Separate work",
+      deliveryKey: randomUUID(),
+      independent: true,
+      workKey: "separate",
+      expectedActiveTaskIds: [],
+    };
+    const first = await delegateTask(prisma, parent, input);
+    expect(
+      await delegateTask(prisma, parent, { ...input, deliveryKey: randomUUID() }),
+    ).toMatchObject({ taskId: first.taskId, runId: null });
+    await expect(
+      delegateTask(prisma, parent, { ...input, deliveryKey: randomUUID(), prompt: "Changed" }),
+    ).rejects.toThrow("WORK_KEY_CONFLICT");
+    await expect(
+      delegateTask(prisma, parent, { ...input, deliveryKey: randomUUID(), workKey: "other" }),
+    ).rejects.toThrow("ACTIVE_TASKS_CHANGED");
+  });
+
+  it("receives instructions within the current run and only consumes delivered messages", async () => {
+    const parent = await root();
+    const child = await start((await delegate(parent)).runId!);
+    const one = await sendTaskMessage(prisma, parent, {
+      taskId: child.taskId,
+      kind: "request",
+      text: "Use the new requirements",
+      deliveryKey: randomUUID(),
+    });
+    const inbox = await claimTaskInbox(prisma, child, []);
+    expect(inbox.map((message) => message.id)).toContain(one.id);
+    expect(
+      await claimTaskInbox(
+        prisma,
+        child,
+        inbox.map((message) => message.id),
+      ),
+    ).toEqual([]);
+    const unacknowledged = await finish(child);
+    expect(unacknowledged).toMatchObject({ taskCompleted: false });
+    if (unacknowledged === false || !unacknowledged.continuationRunId)
+      throw new Error("Missing replay");
+    const resumed = await start(unacknowledged.continuationRunId);
+    expect(await finish(resumed)).toMatchObject({ taskCompleted: true });
+    expect(await prisma.taskMessage.findUnique({ where: { id: one.id } })).toMatchObject({
+      consumedAt: expect.any(Date),
+      deliveredAt: expect.any(Date),
+    });
+  });
+
+  it("rejects stale delivery confirmation and replays for the new lease", async () => {
+    const parent = await root();
+    const child = await start((await delegate(parent)).runId!);
+    const message = await sendTaskMessage(prisma, parent, {
+      taskId: child.taskId,
+      kind: "request",
+      text: "Revise",
+      deliveryKey: randomUUID(),
+    });
+    await claimTaskInbox(prisma, child, []);
+    const resumed = await prisma.run.update({
+      where: { id: child.id },
+      data: { leaseFence: { increment: 1 } },
+    });
+    await expect(markTaskMessagesDelivered(prisma, child, [message.id])).rejects.toThrow();
+    expect(await claimTaskInbox(prisma, resumed, [])).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: message.id })]),
+    );
+  });
+
+  it("coalesces ordinary reports without waking the parent or blocking child completion", async () => {
+    const parent = await root();
+    const child = await start((await delegate(parent)).runId!);
+    await finish(parent);
+    await sendTaskMessage(prisma, child, {
+      taskId: parent.taskId,
+      kind: "status",
+      text: "First stage complete",
+      deliveryKey: randomUUID(),
+    });
+    expect(await reconcileTaskContinuations(prisma)).toEqual([]);
+    await prisma.task.update({
+      where: { id: parent.taskId },
+      data: { nextProgressWakeAt: new Date(0) },
+    });
+    const ids = await reconcileTaskContinuations(prisma);
+    expect(ids).toHaveLength(1);
+    const activeParent = await start(ids[0]!);
+    await sendTaskMessage(prisma, child, {
+      taskId: parent.taskId,
+      kind: "status",
+      text: "Still working",
+      progressChanged: false,
+      deliveryKey: randomUUID(),
+    });
+    await finish(child);
+    const lastBatch = await claimTaskInbox(prisma, activeParent, []);
+    await markTaskMessagesDelivered(
+      prisma,
+      activeParent,
+      lastBatch.map((item) => item.id),
+    );
+    expect(await finish(activeParent)).toMatchObject({ taskCompleted: true });
+  });
+
+  it("delivers only the latest changed report and keeps observations out of the model inbox", async () => {
+    const parent = await root();
+    const child = await start((await delegate(parent)).runId!);
+    const reports = [];
+    for (const [text, progressChanged] of [
+      ["First", true],
+      ["Latest", true],
+      ["Still alive", false],
+    ] as const) {
+      reports.push(
+        await sendTaskMessage(prisma, child, {
+          taskId: parent.taskId,
+          kind: "status",
+          text,
+          progressChanged,
+          deliveryKey: randomUUID(),
+        }),
+      );
+      // Keep ordering deterministic even on databases with millisecond timestamp precision.
+      await prisma.taskMessage.update({
+        where: { id: reports.at(-1)!.id },
+        data: { createdAt: new Date(reports.length * 1000) },
+      });
+    }
+    const batch = await claimTaskInbox(prisma, parent, []);
+    expect(batch.map((item) => item.id)).toEqual([reports[1]!.id]);
+    expect(await prisma.taskMessage.findUnique({ where: { id: reports[0]!.id } })).toMatchObject({
+      deliveryClass: "superseded",
+      consumedAt: expect.any(Date),
+    });
+    const request = await sendTaskMessage(prisma, parent, {
+      taskId: child.taskId,
+      kind: "request",
+      text: "Use the revised input",
+      deliveryKey: randomUUID(),
+    });
+    const actor = { ...owner, email: "owner@example.com", isDeploymentOwner: false };
+    expect((await listOwnedTasks(prisma, actor, { botId: worker.id })).tasks[0]).toMatchObject({
+      latestReport: { text: "Still alive", kind: "status" },
+      pendingMessageCount: 1,
+      reportOverdue: false,
+    });
+    expect((await claimTaskInbox(prisma, child, [])).map((item) => item.id)).toContain(request.id);
+  });
+
+  it("preserves overdue grace through input pause and resume between reconciler scans", async () => {
+    const parent = await root();
+    const child = await start((await delegate(parent)).runId!);
+    // Nine active minutes: four minutes past the five-minute reporting deadline.
+    await prisma.task.update({
+      where: { id: child.taskId },
+      data: { reportDueAt: new Date(Date.now() - 240_000) },
+    });
+    const attempt = await prisma.attempt.findFirstOrThrow({ where: { runId: child.id } });
+    await pauseRunForInput(prisma, {
+      spaceId: child.spaceId,
+      threadId: child.threadId,
+      botId: child.botId,
+      runId: child.id,
+      attemptId: attempt.id,
+      leaseOwner: child.leaseOwner!,
+      leaseFence: child.leaseFence,
+      blocks: [{ kind: "text", text: "Need input" }],
+    });
+    const paused = await prisma.task.findUniqueOrThrow({ where: { id: child.taskId } });
+    expect(paused.reportDueAt).toBeNull();
+    expect(paused.reportRemainingMs).toBeLessThanOrEqual(-240_000);
+    expect(paused.reportRemainingMs).toBeGreaterThan(-245_000);
+    // No reconciler runs during this pause. Runtime resumes the persisted clock itself.
+    const resumed = await start(child.id);
+    const restored = await prisma.task.findUniqueOrThrow({ where: { id: child.taskId } });
+    const deadline = restored.reportDueAt!.getTime() + restored.reportIntervalMs;
+    await reconcileTaskReports(prisma, 100, new Date(deadline - 1));
+    expect(
+      await prisma.taskMessage.count({
+        where: { taskId: parent.taskId, deliveryKey: { startsWith: "report-overdue:" } },
+      }),
+    ).toBe(0);
+    await reconcileTaskReports(prisma, 100, new Date(deadline));
+    expect(
+      await prisma.taskMessage.count({
+        where: { taskId: parent.taskId, deliveryKey: { startsWith: "report-overdue:" } },
+      }),
+    ).toBe(1);
+    expect(resumed.leaseFence).toBeGreaterThan(child.leaseFence);
+  });
+
+  it.each([true, false])(
+    "serializes legacy and coordinated claims with legacy first=%s",
+    async (legacyFirst) => {
+      const coordinated = await root(worker);
+      const legacy = await root(worker, "legacy");
+      await prisma.run.updateMany({
+        where: { id: { in: [coordinated.id, legacy.id] } },
+        data: { status: "queued" },
+      });
+      const first = legacyFirst ? legacy : coordinated;
+      const second = legacyFirst ? coordinated : legacy;
+      const claim = (run: Run) =>
+        claimThreadRun(prisma, worker.threadId, run.id, {
+          where: { id: run.id, status: "queued" },
+          data: { status: "leased", leaseOwner: "worker", leaseFence: { increment: 1 } },
+        });
+      expect(await claim(first)).toEqual({ count: 1 });
+      expect(await claim(second)).toEqual({ count: 0 });
+    },
+  );
+
+  it("bounds continuation priority so old queued work is not starved", async () => {
+    const older = await root(worker);
+    const continuation = await root(worker);
+    await prisma.run.update({
+      where: { id: older.id },
+      data: { status: "queued", createdAt: new Date(1000) },
+    });
+    await prisma.run.update({
+      where: { id: continuation.id },
+      data: { status: "queued", trigger: "task_continue", createdAt: new Date(62_000) },
+    });
+    const claim = (run: Run) =>
+      claimThreadRun(prisma, worker.threadId, run.id, {
+        where: { id: run.id, status: "queued" },
+        data: { status: "leased" },
+      });
+    expect(await claim(continuation)).toEqual({ count: 0 });
+    expect(await claim(older)).toEqual({ count: 1 });
+  });
+
+  it("does not let deferred reports fill the continuation recovery batch", async () => {
+    const firstParent = await root();
+    const firstChild = await start((await delegate(firstParent)).runId!);
+    await finish(firstParent);
+    await sendTaskMessage(prisma, firstChild, {
+      taskId: firstParent.taskId,
+      kind: "status",
+      text: "Progress",
+      deliveryKey: randomUUID(),
+    });
+    const secondParent = await root();
+    const secondChild = await start((await delegate(secondParent)).runId!);
+    await finish(secondParent);
+    await sendTaskMessage(prisma, secondChild, {
+      taskId: secondParent.taskId,
+      kind: "question",
+      text: "Need a decision",
+      deliveryKey: randomUUID(),
+    });
+    const ids = await reconcileTaskContinuations(prisma, 1);
+    expect(ids).toHaveLength(1);
+    expect(await prisma.run.findUnique({ where: { id: ids[0] } })).toMatchObject({
+      taskId: secondParent.taskId,
+    });
+  });
+
+  it("reminds once at the report boundary and cancels overdue escalation after a report", async () => {
+    const parent = await root();
+    const child = await start((await delegate(parent)).runId!);
+    const due = new Date(Date.now() - 1000);
+    await prisma.task.update({ where: { id: child.taskId }, data: { reportDueAt: due } });
+    const messages = await claimTaskInbox(prisma, child, []);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.id).toContain("report-due:");
+    await markTaskMessagesDelivered(
+      prisma,
+      child,
+      messages.map((item) => item.id),
+    );
+    expect(await claimTaskInbox(prisma, child, [])).toEqual([]);
+    await sendTaskMessage(prisma, child, {
+      taskId: parent.taskId,
+      kind: "status",
+      text: "Waiting for the current build, no changes",
+      progressChanged: false,
+      deliveryKey: randomUUID(),
+    });
+    await reconcileTaskReports(prisma, 100, new Date(due.getTime() + 300_000));
+    expect(
+      await prisma.taskMessage.count({
+        where: { taskId: parent.taskId, deliveryKey: { startsWith: "report-overdue:" } },
+      }),
+    ).toBe(0);
+    expect(await prisma.task.findUnique({ where: { id: child.taskId } })).toMatchObject({
+      lastProgressAt: null,
+      lastReportedAt: expect.any(Date),
+    });
+  });
+
+  it("emits one overdue observation, pauses the deadline, and never revives a cancelled task", async () => {
+    const parent = await root();
+    const child = await start((await delegate(parent)).runId!);
+    await prisma.task.update({
+      where: { id: child.taskId },
+      data: { reportDueAt: new Date(Date.now() - 600_000) },
+    });
+    await reconcileTaskReports(prisma);
+    await reconcileTaskReports(prisma);
+    expect(
+      await prisma.taskMessage.count({
+        where: { taskId: parent.taskId, deliveryKey: { startsWith: "report-overdue:" } },
+      }),
+    ).toBe(1);
+    await prisma.run.update({ where: { id: child.id }, data: { status: "waiting_input" } });
+    await reconcileTaskReports(prisma);
+    expect(await prisma.task.findUnique({ where: { id: child.taskId } })).toMatchObject({
+      reportDueAt: null,
+      reportRemainingMs: -300_000,
+    });
+    await prisma.$transaction((tx) => cancelCoordinatedTask(tx, parent.taskId, "Stop"));
+    await reconcileTaskReports(prisma);
+    expect(await reconcileTaskContinuations(prisma)).toEqual([]);
+  });
+
+  it("queues an existing task continuation despite a new queued sibling and serializes claims", async () => {
+    const parent = await root();
+    const first = await delegate(parent);
+    const child = await start(first.runId!);
+    await sendTaskMessage(prisma, child, {
+      taskId: parent.taskId,
+      kind: "question",
+      text: "Which input?",
+      deliveryKey: randomUUID(),
+    });
+    await finish(child);
+    const second = await delegateTask(prisma, parent, {
+      botId: worker.id,
+      prompt: "Independent",
+      deliveryKey: randomUUID(),
+      independent: true,
+      workKey: "independent",
+      expectedActiveTaskIds: [first.taskId],
+    });
+    const question = await prisma.taskMessage.findFirstOrThrow({
+      where: { taskId: parent.taskId, kind: "question" },
+    });
+    await sendTaskMessage(prisma, parent, {
+      taskId: first.taskId,
+      kind: "result",
+      replyToId: question.id,
+      text: "Use input A",
+      deliveryKey: randomUUID(),
+    });
+    const [continuation] = await reconcileTaskContinuations(prisma, 100, first.taskId);
+    expect(continuation).toBeTruthy();
+    const claim = (id: string) =>
+      claimThreadRun(prisma, worker.threadId, id, {
+        where: { id, status: "queued" },
+        data: {
+          status: "leased",
+          leaseOwner: "claim-test",
+          leaseFence: { increment: 1 },
+          leaseExpiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+    const claims = await Promise.all([claim(second.runId!), claim(continuation!)]);
+    expect(claims.reduce((total, result) => total + result.count, 0)).toBe(1);
+    expect(await prisma.run.findUnique({ where: { id: continuation! } })).toMatchObject({
+      status: "leased",
     });
   });
 
@@ -264,7 +644,14 @@ postgres("durable bot coordination", () => {
   it("does not lose a result arriving while the parent continuation is running", async () => {
     const parent = await root();
     const a = await delegate(parent);
-    const b = await delegate(parent);
+    const b = await delegateTask(prisma, parent, {
+      botId: worker.id,
+      prompt: "Independent report",
+      deliveryKey: randomUUID(),
+      independent: true,
+      workKey: "independent-report",
+      expectedActiveTaskIds: [a.taskId],
+    });
     await finish(parent);
     await finish(await start(a.runId!));
     const [next] = await reconcileTaskContinuations(prisma);

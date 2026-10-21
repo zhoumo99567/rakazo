@@ -20,5 +20,11 @@ export const TaskSummarySchema = z.object({
   status: TaskStatusSchema,
   prompt: z.string(),
   completedAt: IsoDate.nullable(),
+  latestReport: z
+    .object({ text: z.string(), reportedAt: IsoDate, kind: z.string() })
+    .nullable()
+    .optional(),
+  pendingMessageCount: z.number().int().nonnegative().optional(),
+  reportOverdue: z.boolean().optional(),
 });
 export type TaskSummary = z.infer<typeof TaskSummarySchema>;

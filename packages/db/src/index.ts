@@ -26,6 +26,8 @@ export * from "./sessions.js";
 export * from "./spaces.js";
 export * from "./task-coordination.js";
 export * from "./task-management.js";
+export * from "./task-reporting.js";
+export * from "./task-run-claim.js";
 export * from "./transaction-retry.js";
 export * from "./usage.js";
 export * from "./voice-credentials.js";

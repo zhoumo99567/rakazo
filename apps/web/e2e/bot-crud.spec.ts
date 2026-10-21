@@ -111,9 +111,41 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(role).toHaveValue("member");
   await role.selectOption("chief");
   await expect(role).toHaveValue("chief");
+  await page.route("**/rpc/tasks/list", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          tasks: [
+            {
+              id: "coordination-preview",
+              botId: "fixture",
+              parentTaskId: null,
+              status: "running",
+              prompt: "Verify the delegated report",
+              completedAt: null,
+              latestReport: {
+                text: "Source checks complete; validating the final report.",
+                reportedAt: "2026-01-01T12:00:00.000Z",
+                kind: "status",
+              },
+              pendingMessageCount: 1,
+              reportOverdue: true,
+            },
+          ],
+          nextCursor: null,
+        },
+      },
+    }),
+  );
   await settings.getByText("Tasks", { exact: true }).click();
+  await expect(
+    settings.getByText("Source checks complete; validating the final report."),
+  ).toBeVisible();
+  await expect(settings.getByText("Pending messages: 1")).toBeVisible();
+  await expect(settings.getByText("Report overdue", { exact: true })).toBeVisible();
   await expect(settings.getByRole("button", { name: "Refresh", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "27d-chief-role-and-tasks");
+  await page.unroute("**/rpc/tasks/list");
   const disabledTools = settings.getByLabel("Disabled tools");
   await expect(disabledTools).toBeVisible();
   await disabledTools.fill("not_a_tool");

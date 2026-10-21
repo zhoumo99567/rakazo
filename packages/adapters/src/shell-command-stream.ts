@@ -58,13 +58,55 @@ export async function deliverFinishedShells(
   pending: Array<Promise<FinishedShellCommand>>,
   turn: { toolResults: Array<{ toolName?: string; details?: unknown }> },
   signal?: AbortSignal,
+  waitControl?: { wakeIfNeeded: () => Promise<boolean>; pollIntervalMs?: number },
 ): Promise<void> {
-  if (pending.length === 0 || turnReturnedRunningShell(turn)) return;
-  const batch = pending.splice(0, pending.length);
-  const results = await Promise.all(batch.map((completion) => finishOrAbort(completion, signal)));
-  const texts = results.filter((result): result is FinishedShellCommand => result !== undefined);
-  if (texts.length === 0) return;
-  followUp(texts.map((result) => formatFinishedShellCommand(result)).join("\n\n"));
+  if (pending.length === 0 || turnReturnedRunningShell(turn) || signal?.aborted) return;
+  // Keep commands tracked until their output is delivered. An inbox wake is not cancellation.
+  const batch = [...pending];
+  const completed = Promise.all(
+    batch.map((completion) =>
+      completion.catch((error: unknown) => ({
+        stdout: "",
+        stderr: error instanceof Error ? error.message : "command failed",
+        code: 1,
+      })),
+    ),
+  );
+  let abort: (() => void) | undefined;
+  const aborted = new Promise<undefined>((resolve) => {
+    abort = () => resolve(undefined);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+  });
+  try {
+    for (;;) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const tick = waitControl
+        ? new Promise<"tick">((resolve) => {
+            timer = setTimeout(() => resolve("tick"), waitControl.pollIntervalMs ?? 2_000);
+          })
+        : new Promise<never>(() => undefined);
+      let result: FinishedShellCommand[] | "tick" | undefined;
+      try {
+        result = await Promise.race([completed, aborted, tick]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+      if (!result) return;
+      if (result === "tick") {
+        if (await waitControl!.wakeIfNeeded()) return;
+        continue;
+      }
+      followUp(result.map(formatFinishedShellCommand).join("\n\n"));
+      for (const command of batch) {
+        const index = pending.indexOf(command);
+        if (index !== -1) pending.splice(index, 1);
+      }
+      return;
+    }
+  } finally {
+    if (abort) signal?.removeEventListener("abort", abort);
+  }
 }
 
 function turnReturnedRunningShell(turn: {
@@ -73,32 +115,6 @@ function turnReturnedRunningShell(turn: {
   return turn.toolResults.some(
     (result) => result.toolName === "shell" && isRunningShellCommand(result.details),
   );
-}
-
-async function finishOrAbort(
-  completion: Promise<FinishedShellCommand>,
-  signal?: AbortSignal,
-): Promise<FinishedShellCommand | undefined> {
-  if (signal?.aborted) return undefined;
-  const settled = completion.then(
-    (result) => result,
-    (error: unknown) => ({
-      stdout: "",
-      stderr: error instanceof Error ? error.message : "command failed",
-      code: 1,
-    }),
-  );
-  if (!signal) return settled;
-  return Promise.race([
-    settled,
-    new Promise<undefined>((resolve) => {
-      if (signal.aborted) {
-        resolve(undefined);
-        return;
-      }
-      signal.addEventListener("abort", () => resolve(undefined), { once: true });
-    }),
-  ]);
 }
 
 /**

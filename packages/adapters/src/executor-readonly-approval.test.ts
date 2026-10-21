@@ -7,6 +7,7 @@ import type {
 import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
 import type { ActionApprovalRule } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
+import type * as DbModule from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
 import { createPendingSteeringRun, sendUserMessage } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,6 +17,17 @@ import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import type * as FleetToolsModule from "./fleet-tools.js";
 import { catalogEntries, resolveCatalogCall } from "./lazy-tool-catalog.js";
+
+// Executor tests isolate task arbitration, which is exercised with real PostgreSQL.
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof DbModule>()),
+  claimThreadRun: (
+    prisma: PrismaClient,
+    _threadId: string,
+    _runId: string,
+    claim: Parameters<PrismaClient["run"]["updateMany"]>[0],
+  ) => prisma.run.updateMany(claim),
+}));
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),

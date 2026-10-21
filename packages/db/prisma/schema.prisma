@@ -621,6 +621,17 @@ model Task {
   rootTaskId              String?
   delegatedByRunId        String?
   delegationKey           String?        @unique
+  workKey                 String?
+  revisionOfTaskId        String?
+  reportIntervalMs        Int            @default(300000)
+  reportDueAt             DateTime?
+  reportRemainingMs       Int?
+  reportReminderAt        DateTime?
+  reportOverdueAt         DateTime?
+  lastReportedAt          DateTime?
+  lastProgressAt          DateTime?
+  latestReport            Json?
+  nextProgressWakeAt      DateTime?
   originalPrompt          String?
   sourceMessageId         String?
   ownerAuthorized         Boolean        @default(false)
@@ -639,6 +650,8 @@ model Task {
   @@index([spaceId, botId])
   @@index([parentTaskId, status])
   @@index([protocol, status, updatedAt])
+  @@unique([parentTaskId, workKey])
+  @@index([reportDueAt])
   @@index([rootTaskId])
   @@map("tasks")
 }
@@ -657,6 +670,8 @@ model TaskMessage {
   replyToId      String?
   answeredAt     DateTime?
   deliveryKey    String    @unique
+  deliveryClass  String    @default("actionable")
+  deliveredAt    DateTime?
   claimedByRunId String?
   consumedAt     DateTime?
   createdAt      DateTime  @default(now())

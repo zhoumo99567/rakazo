@@ -288,6 +288,30 @@ export class PiAgentRuntime implements AgentRuntime {
         };
         resumeHost = host;
         const tools = toAgentTools(toolDefs, host);
+        const seenTaskIds = new Set(request.initialTaskMessageIds ?? []);
+        const taskDeliveries = new WeakMap<object, string[]>();
+        const queueTaskMessages = async (turnSignal?: AbortSignal) => {
+          if (
+            !request.claimTaskMessages ||
+            signal.aborted ||
+            turnSignal?.aborted ||
+            host.pausePending
+          )
+            return false;
+          const messages = await request.claimTaskMessages([...seenTaskIds]);
+          if (signal.aborted || turnSignal?.aborted || host.pausePending) return false;
+          for (const item of messages) {
+            const message: AgentMessage = {
+              role: "user",
+              content: item.text,
+              timestamp: Date.now(),
+            };
+            taskDeliveries.set(message, [item.id]);
+            seenTaskIds.add(item.id);
+            agent.steer(message);
+          }
+          return messages.length > 0;
+        };
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
         seenSteeringIds.push(...initialSteering.map((item) => item.id));
@@ -435,6 +459,14 @@ export class PiAgentRuntime implements AgentRuntime {
                 : request.model.maxImagesPerPrompt,
             ),
           finishTurn: async (turn, turnSignal) => {
+            if (
+              host.pausePending ||
+              signal.aborted ||
+              turnSignal?.aborted ||
+              providerFailureText(turn.message)
+            )
+              return;
+            if (await queueTaskMessages(turnSignal)) return;
             await deliverFinishedShells(
               (text) => {
                 agent.followUp({
@@ -446,9 +478,15 @@ export class PiAgentRuntime implements AgentRuntime {
               host.pendingShells,
               turn,
               turnSignal,
+              request.claimTaskMessages
+                ? { wakeIfNeeded: () => queueTaskMessages(turnSignal), pollIntervalMs: 2_000 }
+                : undefined,
             );
+            await queueTaskMessages(turnSignal);
           },
-          prepareNextTurnWithContext: async () => {
+          prepareNextTurnWithContext: async (_context, turnSignal) => {
+            if (turnSignal?.aborted || signal.aborted || host.pausePending) return undefined;
+            await queueTaskMessages(turnSignal);
             if (!request.claimSteering) return undefined;
             const steering = await request.claimSteering([...seenSteeringIds]);
             if (steering.length === 0) return undefined;
@@ -494,6 +532,11 @@ export class PiAgentRuntime implements AgentRuntime {
         let streamedBeforePendingFinal = 0;
         agent.subscribe(async (event) => {
           if (event.type === "message_end") {
+            const deliveredIds = taskDeliveries.get(event.message);
+            if (deliveredIds) {
+              await request.onTaskMessagesDelivered?.(deliveredIds);
+              taskDeliveries.delete(event.message);
+            }
             await piSession?.appendMessage(event.message);
           }
           if (event.type === "tool_execution_start") {
@@ -596,7 +639,18 @@ export class PiAgentRuntime implements AgentRuntime {
           ...initialSteering.flatMap((item) => item.images ?? []),
         ]);
         try {
-          await agent.prompt(initialPrompt, images?.length ? images : undefined);
+          if (signal.aborted) return;
+          const initialMessage: AgentMessage = {
+            role: "user",
+            content: images?.length
+              ? [{ type: "text", text: initialPrompt }, ...images]
+              : initialPrompt,
+            timestamp: Date.now(),
+          };
+          if (request.initialTaskMessageIds?.length)
+            taskDeliveries.set(initialMessage, request.initialTaskMessageIds);
+          if (request.initialTaskMessageIds?.length) await agent.prompt(initialMessage);
+          else await agent.prompt(initialPrompt, images?.length ? images : undefined);
         } finally {
           try {
             await agent.waitForIdle();

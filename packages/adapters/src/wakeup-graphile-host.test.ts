@@ -170,6 +170,10 @@ describe("GraphileJobPublisher.enqueue", () => {
       "select attempts, max_attempts from graphile_worker._private_jobs where key = $1",
       ["run:run-1"],
     );
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("with expired"), [
+      "pulled-forward",
+      "run:run-1",
+    ]);
     expect(addJob).toHaveBeenCalledWith(
       "run.continue",
       expect.anything(),

@@ -107,6 +107,8 @@ import {
 import type { McpServer, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  claimTaskInbox,
+  claimThreadRun,
   createSpaceForMember,
   createThreadMessageInTransaction,
   effectiveMemoryScope,
@@ -115,6 +117,7 @@ import {
   InvalidSpaceNameError,
   isTooManyDatabaseConnections,
   loadRunHistoryMessages,
+  markTaskMessagesDelivered,
   Prisma,
   parseComputerMode,
   readHistory,
@@ -3523,7 +3526,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
       const fence = nextFence(run.leaseFence);
       const now = new Date();
-      const leased = await deps.prisma.run.updateMany({
+      const leased = await claimThreadRun(deps.prisma, run.threadId, runId, {
         where: {
           id: runId,
           ...continueRunClaimFence(run),
@@ -6987,6 +6990,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   task_id: args.task_id ? String(args.task_id) : undefined,
                   reply_to: args.reply_to ? String(args.reply_to) : undefined,
                   message: redactSecrets(String(args.message ?? ""), runSecrets),
+                  progressChanged: args.progress_changed !== false,
                   intent: args.intent as
                     | "request"
                     | "result"
@@ -7066,6 +7070,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
                   message: redactSecrets(String(args.message ?? ""), runSecrets),
                   deliveryKey: effectKey,
+                  workKey: args.work_key === undefined ? undefined : String(args.work_key),
+                  independent: args.independent === true,
+                  expectedActiveTaskIds: Array.isArray(args.expected_active_task_ids)
+                    ? args.expected_active_task_ids.map(String)
+                    : undefined,
+                  revisionOfTaskId:
+                    args.revision_of_task_id === undefined
+                      ? undefined
+                      : String(args.revision_of_task_id),
+                  reportIntervalMs:
+                    args.report_interval_minutes === undefined
+                      ? undefined
+                      : Number(args.report_interval_minutes) * 60_000,
                 }),
               );
             }
@@ -7493,6 +7510,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   completion,
                   runSecrets,
                 ),
+              initialTaskMessageIds: coordination?.messageIds,
+              claimTaskMessages:
+                coordination && !scripted
+                  ? (seenIds) => claimTaskInbox(deps.prisma, taskScope, seenIds)
+                  : undefined,
+              onTaskMessagesDelivered: coordination
+                ? (ids) => markTaskMessagesDelivered(deps.prisma, taskScope, ids)
+                : undefined,
               claimSteering: scripted
                 ? undefined
                 : async (seenIds) => {

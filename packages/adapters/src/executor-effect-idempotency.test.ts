@@ -9,11 +9,24 @@ import {
   legacyScopedToolEffectIdempotencyKey,
   toolEffectIdempotencyKey,
 } from "@rakazo/core/node/approval-effect-key";
+import type * as DbModule from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type * as AutoReviewModule from "./auto-review.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { FakeMediaGenerationProvider } from "./media-generation-provider.js";
+
+// Executor tests isolate task arbitration, which is exercised with real PostgreSQL.
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof DbModule>()),
+  claimThreadRun: (
+    prisma: PrismaClient,
+    _threadId: string,
+    _runId: string,
+    claim: Parameters<PrismaClient["run"]["updateMany"]>[0],
+  ) => prisma.run.updateMany(claim),
+}));
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),

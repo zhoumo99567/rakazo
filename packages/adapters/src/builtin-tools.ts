@@ -1377,6 +1377,11 @@ export const builtinAgentTools: ConnectorTool[] = [
           description: "Active parent or child task id; required when a bot has multiple tasks.",
         },
         reply_to: { type: "string", description: "Task question message id being answered." },
+        progress_changed: {
+          type: "boolean",
+          description:
+            "For task status reports: false when reporting an unchanged operation or blocker; prevents waking the parent for an unchanged heartbeat.",
+        },
         message: { type: "string", description: "What to send." },
         intent: {
           type: "string",
@@ -1390,7 +1395,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "handoff_to_bot",
     description:
-      "In a private task, assign work to another bot as a durable child task. Your task remains yours; results return automatically. You can assign several children, continue independent work, then end the turn to wait. In a group chat, transfer the next stage to another current member as a visible handoff.",
+      "In a private task, assign work to another bot as a durable child task. Your task remains yours; results return automatically. An unfinished child for the same bot blocks duplicate assignment: use message_bot(task_id) to continue it. Explicit independent work needs a stable work_key and expected_active_task_ids. Stage results are not task completion. You can assign several children, continue independent work, then end the turn to wait. In a group chat, transfer the next stage to another current member as a visible handoff.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1400,6 +1405,34 @@ export const builtinAgentTools: ConnectorTool[] = [
           description: "Exact name of the target member when bot_id is omitted.",
         },
         message: { type: "string", description: "What the receiving bot should do next." },
+        work_key: {
+          type: "string",
+          description:
+            "Stable work identity within this parent, reused on retries. A revision needs a new key.",
+        },
+        independent: {
+          type: "boolean",
+          description:
+            "Explicitly assign separate work despite existing active tasks for this bot.",
+        },
+        expected_active_task_ids: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Exact active sibling task ids observed before independent assignment; [] if none.",
+        },
+        revision_of_task_id: {
+          type: "string",
+          description:
+            "Terminal child of this parent being revised. For unfinished work send a message instead.",
+        },
+        report_interval_minutes: {
+          type: "number",
+          minimum: 0,
+          maximum: 1440,
+          description:
+            "Ordinary task report interval, inherited by default (5 minutes). 0 disables periodic reporting, never questions or final outcomes.",
+        },
       },
       required: ["message"],
     },

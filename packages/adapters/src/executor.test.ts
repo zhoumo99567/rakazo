@@ -1,6 +1,7 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE, FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
+import type * as DbModule from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -28,6 +29,17 @@ import {
 import { UnavailableModelForAuthError, validateConnectedModelChoice } from "./model-selection.js";
 import { RetiredModelCredentialError, serializeModelSecret } from "./pi-oauth.js";
 import { parseUpdateBotPatch } from "./update-bot-patch.js";
+
+// Executor tests isolate task arbitration, which is exercised with real PostgreSQL.
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof DbModule>()),
+  claimThreadRun: (
+    prisma: PrismaClient,
+    _threadId: string,
+    _runId: string,
+    claim: Parameters<PrismaClient["run"]["updateMany"]>[0],
+  ) => prisma.run.updateMany(claim),
+}));
 
 describe("bot tool permissions", () => {
   it("never lets self-edit change disabled tools alongside an allowed field", () => {

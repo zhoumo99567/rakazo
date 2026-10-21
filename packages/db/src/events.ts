@@ -37,6 +37,7 @@ import {
   coordinatedRootData,
   finishCoordinatedTask,
   lockTaskTree,
+  pauseTaskReport,
 } from "./task-coordination.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
@@ -1058,6 +1059,7 @@ export async function pauseRunForInput(
       },
     });
     if (paused.count !== 1) return null;
+    if (taskRun?.taskId) await pauseTaskReport(tx, taskRun.taskId);
     if (taskRun?.taskId)
       await tx.task.updateMany({
         where: { id: taskRun.taskId, protocol: TASK_PROTOCOL },
@@ -1139,6 +1141,7 @@ export async function pauseRunForTakeover(
       },
     });
     if (paused.count !== 1) return null;
+    if (taskRun?.taskId) await pauseTaskReport(tx, taskRun.taskId);
 
     const attempt = await tx.attempt.updateMany({
       where: {
