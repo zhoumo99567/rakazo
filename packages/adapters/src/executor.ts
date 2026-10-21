@@ -7458,7 +7458,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
         for (const effect of recoveringShells) {
           const operation = shellOperationOf(effect.result);
-          if (!operation || operation.id !== effect.id || operation.computer.botId !== bot.id)
+          if (
+            !operation ||
+            operation.id !== effect.id ||
+            operation.computer.botId !== storedComputer.homeKey
+          )
             continue;
           const recovered = await observeShellCommand(observeDurableOperation(operation), {
             secrets: runSecrets,

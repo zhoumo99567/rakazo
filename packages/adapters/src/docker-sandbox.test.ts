@@ -40,7 +40,7 @@ describe("Docker sandbox", () => {
     const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
     const computer = {
       id: "computer",
-      botId: "bot",
+      botId: "team-workspace",
       kind: "docker" as const,
       providerRef: "computer",
     };
@@ -57,6 +57,10 @@ describe("Docker sandbox", () => {
     expect(result).not.toHaveProperty("runnerPid");
     const body = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body));
     expect(body.timeoutMs).toBe(15_000);
+    expect(fetchMock.mock.calls[0]![1]!.headers).toMatchObject({
+      "x-rakazo-bot-id": "team-workspace",
+      "x-rakazo-screen-id": "bot",
+    });
     const request = JSON.parse(body.argv.at(-1));
     expect(request).toMatchObject({
       action: "start",
@@ -69,9 +73,9 @@ describe("Docker sandbox", () => {
     ).rejects.toThrow("scoped run");
     await expect(
       provider.commandOperation(
-        { ...computer, botId: "other" },
+        computer,
         { action: "status", operationId: "effect" },
-        { ...context, runId: "run" },
+        { ...context, botId: undefined, runId: "run" },
       ),
     ).rejects.toThrow("scoped run");
     expect(fetchMock).toHaveBeenCalledTimes(1);

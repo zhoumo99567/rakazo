@@ -280,7 +280,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     request: CommandOperationRequest,
     context: AdapterContext,
   ): Promise<CommandOperationSnapshot> {
-    if (!context.runId || !context.spaceId || computer.botId !== context.botId)
+    if (!context.runId || !context.spaceId || !context.botId || !computer.botId)
       throw new Error("Durable commands require a scoped run");
     const command =
       request.action === "start"
@@ -293,7 +293,9 @@ export class DockerSandboxProvider implements SandboxProvider {
     const payload = {
       action: request.action,
       operationId: request.operationId,
-      scope: JSON.stringify([context.spaceId, computer.botId, context.runId]),
+      // ComputerRef.botId is the computer home key, including shared team homes.
+      // Isolate operations by the actual requesting bot, independently of that owner key.
+      scope: JSON.stringify([context.spaceId, context.botId, context.runId]),
       command,
       fingerprint: command
         ? createHash("sha256")

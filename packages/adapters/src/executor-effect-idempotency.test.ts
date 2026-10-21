@@ -73,7 +73,11 @@ type ToolCall = {
   executionId: string;
 };
 
-function fixture(runId = "run-1", commandOperation?: SandboxProvider["commandOperation"]) {
+function fixture(
+  runId = "run-1",
+  commandOperation?: SandboxProvider["commandOperation"],
+  homeKey = "bot-1",
+) {
   const effects: Effect[] = [];
   const results: unknown[] = [];
   const media = new FakeMediaGenerationProvider();
@@ -192,7 +196,7 @@ function fixture(runId = "run-1", commandOperation?: SandboxProvider["commandOpe
         title: "Assistant",
         description: "Test assistant",
         computerId: "computer-1",
-        computer: { id: "computer-1", scope: "dedicated" },
+        computer: { id: "computer-1", scope: homeKey === "bot-1" ? "dedicated" : "team", homeKey },
       })),
       findMany: vi.fn(async () => []),
     },
@@ -370,45 +374,48 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.messageCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("queries the persisted operation before opening the model after restart", async () => {
-    const operation = {
-      version: 1,
-      id: "durable-shell",
-      computer: { id: "computer-1", botId: "bot-1", providerRef: "computer-1", kind: "docker" },
-    };
-    const query = vi.fn(async () => ({
-      state: "completed" as const,
-      code: 0,
-      stdout: "persisted output",
-      stderr: "",
-      observedAt: new Date().toISOString(),
-    }));
-    const f = fixture("durable-run", query);
-    const args = { command: "long operation", timeout_ms: 1800000 };
-    f.effects.push({
-      id: operation.id,
-      spaceId: "space-1",
-      runId: "durable-run",
-      kind: "shell",
-      idempotencyKey: toolEffectIdempotencyKey("durable-run", "shell", args),
-      status: "executing",
-      request: args,
-      result: { operation, state: "running" },
-    });
-    f.setCalls([{ name: "shell", args, executionId: "new-model-call" }]);
-    await f.run();
-    expect(query).toHaveBeenCalledTimes(1);
-    expect(query.mock.calls[0]).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ action: "status", operationId: operation.id }),
-      ]),
-    );
-    expect(f.results[0]).toMatchObject({ code: 0, stdout: "persisted output" });
-    expect(f.messageCreate).toHaveBeenCalledTimes(1);
-    await f.run();
-    expect(query).toHaveBeenCalledTimes(1);
-    expect(f.messageCreate).toHaveBeenCalledTimes(1);
-  });
+  it.each(["bot-1", "team-space-1"])(
+    "queries the persisted operation before opening the model after restart on %s",
+    async (homeKey) => {
+      const operation = {
+        version: 1,
+        id: "durable-shell",
+        computer: { id: "computer-1", botId: homeKey, providerRef: "computer-1", kind: "docker" },
+      };
+      const query = vi.fn(async () => ({
+        state: "completed" as const,
+        code: 0,
+        stdout: "persisted output",
+        stderr: "",
+        observedAt: new Date().toISOString(),
+      }));
+      const f = fixture("durable-run", query, homeKey);
+      const args = { command: "long operation", timeout_ms: 1800000 };
+      f.effects.push({
+        id: operation.id,
+        spaceId: "space-1",
+        runId: "durable-run",
+        kind: "shell",
+        idempotencyKey: toolEffectIdempotencyKey("durable-run", "shell", args),
+        status: "executing",
+        request: args,
+        result: { operation, state: "running" },
+      });
+      f.setCalls([{ name: "shell", args, executionId: "new-model-call" }]);
+      await f.run();
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(query.mock.calls[0]).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ action: "status", operationId: operation.id }),
+        ]),
+      );
+      expect(f.results[0]).toMatchObject({ code: 0, stdout: "persisted output" });
+      expect(f.messageCreate).toHaveBeenCalledTimes(1);
+      await f.run();
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(f.messageCreate).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it.each(["generate_image", "generate_video"] as const)(
     "recovers interrupted %s through the executor with a changed tool-call ID",
