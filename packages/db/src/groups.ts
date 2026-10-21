@@ -11,9 +11,12 @@ import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import { IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
+import { cancelCoordinatedTasks } from "./task-coordination.js";
 import { activeRunSelection, activeRunStatuses, previewFromBlocks } from "./thread-listing.js";
 
 type GroupRecord = {
+  adminBotId: string | null;
+  createdByBotId: string | null;
   id: string;
   spaceId: string;
   userId: string;
@@ -61,6 +64,8 @@ function mapGroup(group: GroupRecord): Group {
   if (!group.thread) throw new IsolationError("Group is missing its thread");
   const preview = previewFromBlocks(group.thread.messages[0]?.blocks);
   return {
+    adminBotId: group.adminBotId,
+    createdByBotId: group.createdByBotId,
     id: group.id,
     spaceId: group.spaceId,
     name: group.name,
@@ -179,6 +184,23 @@ const groupTargetInclude = {
     orderBy: groupMemberOrder,
   },
 } as const;
+
+async function cancelGroupTasks(tx: Prisma.TransactionClient, threadId: string, botIds?: string[]) {
+  const tasks = await tx.task.findMany({
+    where: {
+      threadId,
+      protocol: "coordination_v1",
+      status: { notIn: ["completed", "failed", "cancelled"] },
+      ...(botIds ? { botId: { in: botIds } } : {}),
+    },
+    select: { id: true },
+  });
+  return cancelCoordinatedTasks(
+    tx,
+    tasks.map((task) => task.id),
+    "Group membership or availability changed.",
+  );
+}
 
 type RunTeardownTarget = {
   id: string;
@@ -340,18 +362,61 @@ export function createGroupRepos(prisma: PrismaClient) {
       return group;
     },
 
-    async createGroup(actor: Actor, input: { name: string; botIds: string[] }): Promise<Group> {
-      const members = await assertOwnedBots(prisma, actor, input.botIds);
+    async createGroup(
+      actor: Actor,
+      input: { name: string; botIds: string[]; adminBotId?: string },
+      creatorBotId?: string,
+      creationKey?: string,
+    ): Promise<Group> {
+      const members = await assertOwnedBots(
+        prisma,
+        actor,
+        creatorBotId ? [...new Set([creatorBotId, ...input.botIds])] : input.botIds,
+      );
+      const adminBotId = creatorBotId ?? input.adminBotId;
+      if (adminBotId && !members.some((member) => member.botId === adminBotId))
+        throw new IsolationError("The administrator must be a group member.");
       const created = await prisma.$transaction(async (tx) => {
         await lockSpaceForContentCreation(tx, {
           spaceId: actor.spaceId,
           userId: actor.userId,
         });
+        if (creatorBotId) {
+          await tx.$queryRaw`SELECT id FROM bots WHERE id = ${creatorBotId} FOR UPDATE`;
+          const creator = await tx.bot.findFirst({
+            where: {
+              id: creatorBotId,
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              archivedAt: null,
+              managementRole: "chief",
+            },
+          });
+          if (!creator) throw new IsolationError("Only a Chief can create a group.");
+        }
+        if (creationKey) {
+          const existing = await tx.chatGroup.findUnique({
+            where: { creationKey },
+            include: groupInclude,
+          });
+          if (existing) {
+            if (
+              existing.userId !== actor.userId ||
+              existing.spaceId !== actor.spaceId ||
+              existing.createdByBotId !== creatorBotId
+            )
+              throw new IsolationError();
+            return existing;
+          }
+        }
         const group = await tx.chatGroup.create({
           data: {
             spaceId: actor.spaceId,
             userId: actor.userId,
             name: input.name.trim(),
+            adminBotId,
+            createdByBotId: creatorBotId,
+            creationKey,
           },
         });
         await tx.chatGroupMember.createMany({
@@ -382,9 +447,11 @@ export function createGroupRepos(prisma: PrismaClient) {
         name?: string;
         botIds?: string[];
         expectedBotIds?: string[];
+        adminBotId?: string;
         pinned?: boolean;
         sectionId?: string | null;
       },
+      managerBotId?: string,
     ): Promise<{ group: Group; cancelledRunIds: string[] }> {
       const members = input.botIds ? await assertOwnedBots(prisma, actor, input.botIds) : undefined;
       const updated = await prisma.$transaction(async (tx) => {
@@ -402,6 +469,14 @@ export function createGroupRepos(prisma: PrismaClient) {
           },
         });
         if (!current?.thread) throw new IsolationError();
+        if (
+          managerBotId &&
+          (current.adminBotId !== managerBotId ||
+            !current.members.some(
+              (member) => member.botId === managerBotId && member.bot.archivedAt === null,
+            ))
+        )
+          throw new IsolationError("Only this group's administrator can manage it.");
         if (input.expectedBotIds) {
           const expected = new Set(input.expectedBotIds);
           const active = current.members.filter((member) => member.bot.archivedAt === null);
@@ -423,6 +498,23 @@ export function createGroupRepos(prisma: PrismaClient) {
         const nextBotIds = new Set(
           members?.map((member) => member.botId) ?? current.members.map((member) => member.botId),
         );
+        const adminBotId = input.adminBotId ?? current.adminBotId;
+        if (
+          adminBotId &&
+          (!nextBotIds.has(adminBotId) ||
+            !(await tx.bot.findFirst({
+              where: {
+                id: adminBotId,
+                spaceId: actor.spaceId,
+                userId: actor.userId,
+                archivedAt: null,
+              },
+            })))
+        ) {
+          throw new IsolationError(
+            "Choose an active member as administrator before removing the current administrator.",
+          );
+        }
         const removedBotIds = current.members
           .map((member) => member.botId)
           .filter((botId) => !nextBotIds.has(botId));
@@ -438,9 +530,17 @@ export function createGroupRepos(prisma: PrismaClient) {
               select: { id: true, taskId: true },
             })
           : [];
+        const cancelledTaskRunIds = removedBotIds.length
+          ? await cancelGroupTasks(tx, current.thread.id, removedBotIds)
+          : [];
+        const cancelledTaskRunSet = new Set(cancelledTaskRunIds);
         if (activeRuns.length) {
           const now = new Date();
-          await cancelRunsInTransaction(tx, activeRuns, now);
+          await cancelRunsInTransaction(
+            tx,
+            activeRuns.filter((run) => !cancelledTaskRunSet.has(run.id)),
+            now,
+          );
         }
         if (input.name !== undefined) {
           await tx.chatGroup.update({
@@ -461,6 +561,7 @@ export function createGroupRepos(prisma: PrismaClient) {
           where: { id: input.groupId },
           data: {
             updatedAt: new Date(),
+            adminBotId: input.adminBotId,
             pinned: input.pinned,
             sectionId: input.sectionId,
           },
@@ -470,7 +571,12 @@ export function createGroupRepos(prisma: PrismaClient) {
             where: { id: input.groupId },
             include: groupInclude,
           })
-          .then((group) => ({ group, cancelledRunIds: activeRuns.map((run) => run.id) }));
+          .then((group) => ({
+            group,
+            cancelledRunIds: [
+              ...new Set([...activeRuns.map((run) => run.id), ...cancelledTaskRunIds]),
+            ],
+          }));
       });
       if (!updated.group.thread) throw new IsolationError();
       return {
@@ -500,14 +606,20 @@ export function createGroupRepos(prisma: PrismaClient) {
           },
           select: { id: true, taskId: true },
         });
-        const runIds = activeRuns.map((run) => run.id);
+        const cancelledTaskRunIds = await cancelGroupTasks(tx, current.thread.id);
+        const runIds = [...new Set([...activeRuns.map((run) => run.id), ...cancelledTaskRunIds])];
+        const cancelledTaskRunSet = new Set(cancelledTaskRunIds);
         const now = new Date();
         // Snapshot before cancellation commits. An expired lease that has not been
         // reclaimed still names this run's screen.
         const { targets } = await snapshotRunTeardownTargets(tx, runIds);
 
         if (runIds.length) {
-          await cancelRunsInTransaction(tx, activeRuns, now);
+          await cancelRunsInTransaction(
+            tx,
+            activeRuns.filter((run) => !cancelledTaskRunSet.has(run.id)),
+            now,
+          );
           await tx.event.deleteMany({
             where: { type: "thread.progress", runId: { in: runIds } },
           });
@@ -573,6 +685,14 @@ export async function lockOwnedGroup(
   actor: Pick<Actor, "spaceId" | "userId">,
   groupId: string,
 ) {
+  // Task operations lock their thread before the task tree. Membership changes must
+  // take the same thread lock before the group/task locks, including idle task cancellation.
+  await prisma.$queryRaw`
+    SELECT t.id FROM threads t
+    JOIN chat_groups g ON g.id = t."groupId"
+    WHERE g.id = ${groupId} AND g."spaceId" = ${actor.spaceId} AND g."userId" = ${actor.userId}
+    FOR UPDATE OF t
+  `;
   const locked = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id
     FROM chat_groups

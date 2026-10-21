@@ -1,4 +1,6 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  Administrator: "管理员",
+  "First member": "第一位成员",
   "Assigned by {name}": "由 {name} 派发",
   "Assigned by a bot": "Bot 派发",
   "Started by you": "你发起",

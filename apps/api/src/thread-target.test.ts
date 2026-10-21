@@ -3609,6 +3609,13 @@ describe("sendThreadMessage", () => {
       },
     );
 
+    expect(tx.task.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        protocol: "coordination_v1",
+        ownerAuthorized: true,
+        sourceMessageId: "msg-1",
+      }),
+    });
     expect(result).toMatchObject({ runId: "run-1", taskId: "task-1" });
     expect(tx.message.create).toHaveBeenCalledWith({
       data: expect.objectContaining({

@@ -331,7 +331,7 @@ describe("run tool selection", () => {
         expect.arrayContaining(["handoff_to_bot", "task_status", "task_cancel"]),
       );
       expect(names.includes("spawn_bot")).toBe(managementRole === "chief");
-      expect(names).not.toContain("create_group");
+      expect(names.includes("create_group")).toBe(managementRole === "chief");
       const external = selectBuiltinToolsForRun({
         ...options,
         trigger: "task_delegation",
@@ -343,7 +343,7 @@ describe("run tool selection", () => {
         managementRole: "member",
         fleetManagement: true,
       }).map((tool) => tool.name);
-      expect(memberGroup).toContain("create_group");
+      expect(memberGroup).not.toContain("create_group");
       expect(memberGroup).not.toContain("spawn_bot");
     },
   );
@@ -3759,4 +3759,37 @@ it("resolves each bot's compatible endpoint and key even when model names match"
   await expect(
     executor.resolveModel({ userId: "user-1", spaceId: "ws-1", botId: "b" }),
   ).rejects.toThrow("Model connection is no longer available");
+});
+
+describe("coordinated group tools", () => {
+  it("exposes child-task messaging in groups and limits creation to Chiefs", () => {
+    const options = {
+      graphicalToolsAllowed: false,
+      groupId: "group",
+      trigger: "user",
+      semanticMemoryEnabled: false,
+      messagingChannelRun: false,
+      taskProtocol: "coordination_v1",
+      managementRole: "member",
+      ownerAuthorized: true,
+      groupAdministrator: true,
+    };
+    const names = selectBuiltinToolsForRun(options).map((t) => t.name);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "handoff_to_bot",
+        "message_bot",
+        "task_status",
+        "task_cancel",
+        "update_group",
+      ]),
+    );
+    expect(names).not.toContain("create_group");
+    expect(names).not.toContain("post_to_group");
+    expect(
+      selectBuiltinToolsForRun({ ...options, groupId: null, managementRole: "chief" }).map(
+        (t) => t.name,
+      ),
+    ).toEqual(expect.arrayContaining(["create_group", "post_to_group"]));
+  });
 });

@@ -191,6 +191,7 @@ export async function loadGroupContext(
   prisma: PrismaClient,
   groupId: string,
   self: { id: string; name: string },
+  coordinated = false,
 ): Promise<string | undefined> {
   const group = await prisma.chatGroup.findUnique({
     where: { id: groupId },
@@ -205,9 +206,15 @@ export async function loadGroupContext(
     },
   });
   if (!group) return undefined;
-  return renderGroupMembersContext(
-    group.name,
-    group.members.map((member) => member.bot),
-    self,
+  return (
+    renderGroupMembersContext(
+      group.name,
+      group.members.map((member) => member.bot),
+      self,
+      coordinated,
+    ) +
+    (group.adminBotId
+      ? `\nGroup administrator bot id: ${group.adminBotId}. Unmentioned user messages go to this member. Administration does not change existing task ownership.`
+      : "")
   );
 }

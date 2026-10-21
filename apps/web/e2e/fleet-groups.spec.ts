@@ -8,7 +8,7 @@ test("a group a bot creates after approval appears in the sidebar without a relo
   await completeOnboarding(page);
   await page.waitForURL(/\/app\/[^/]+$/);
   const chiefId = activeBotId(page);
-  await rpc(page, "bots/update", { botId: chiefId, fleetManagement: true });
+  await rpc(page, "bots/update", { botId: chiefId, managementRole: "chief" });
   for (const name of ["Alpha", "Beta"]) {
     await rpc(page, "bots/create", { name, title: "", description: "", notifyOnFinish: true });
   }
@@ -24,7 +24,7 @@ test("a group a bot creates after approval appears in the sidebar without a relo
   ).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByText("Members: Alpha, Beta", { exact: true })).toBeVisible();
+  await expect(page.getByText("Members: Chief, Alpha, Beta", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Always allow this tool" })).toHaveCount(0);
   await expect(sidebar.getByRole("button", { name: /^Crew/ })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "fleet-create-group-approval");
@@ -55,7 +55,7 @@ test("model approvals use catalog labels and fit wide and narrow chats", async (
   await completeOnboarding(page);
   await page.waitForURL(/\/app\/[^/]+$/);
   const chiefId = activeBotId(page);
-  await rpc(page, "bots/update", { botId: chiefId, fleetManagement: true });
+  await rpc(page, "bots/update", { botId: chiefId, managementRole: "chief" });
   const composer = page.getByPlaceholder("Message Chief");
   await composer.fill("spawn a bot named Scout to research venues");
   await page.keyboard.press("Enter");

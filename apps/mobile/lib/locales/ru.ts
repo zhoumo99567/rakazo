@@ -1,4 +1,6 @@
 export const RU_MESSAGES: Record<string, string> = {
+  Administrator: "Администратор",
+  "First member": "Первый участник",
   "Could not cancel task": "Не удалось отменить задачу",
   "Could not load tasks": "Не удалось загрузить задачи",
   "No tasks": "Нет задач",

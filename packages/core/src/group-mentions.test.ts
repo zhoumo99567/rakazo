@@ -28,6 +28,19 @@ describe("hasMentionToken", () => {
 });
 
 describe("resolveGroupTargetBotIds", () => {
+  it("routes plain messages to the administrator while keeping legacy and mention behavior", () => {
+    expect(resolveGroupTargetBotIds({ text: "hello", members, adminBotId: "b" })).toEqual(["b"]);
+    expect(resolveGroupTargetBotIds({ text: "hello", members })).toEqual(["a"]);
+    expect(resolveGroupTargetBotIds({ text: "@BotA", members, adminBotId: "b" })).toEqual(["a"]);
+    expect(resolveGroupTargetBotIds({ text: "@everyone", members, adminBotId: "b" })).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    expect(resolveGroupTargetBotIds({ text: "hello", members, adminBotId: "departed" })).toEqual(
+      [],
+    );
+  });
   it("returns mentioned bots from text", () => {
     expect(
       resolveGroupTargetBotIds({

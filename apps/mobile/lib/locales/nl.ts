@@ -1,4 +1,6 @@
 export const NL_MESSAGES: Record<string, string> = {
+  Administrator: "Beheerder",
+  "First member": "Eerste lid",
   "Could not cancel task": "Taak kon niet worden geannuleerd",
   "Could not load tasks": "Taken konden niet worden geladen",
   "No tasks": "Geen taken",

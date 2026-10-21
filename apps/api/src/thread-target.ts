@@ -273,11 +273,14 @@ async function lockAndLoadGroupMembers(
     },
   });
   if (!group || group.members.length < GROUP_MEMBER_MIN) throw new IsolationError();
-  return group.members.map((member) => ({
-    botId: member.bot.id,
-    name: member.bot.name,
-    color: member.bot.color,
-  }));
+  return {
+    adminBotId: group.adminBotId,
+    members: group.members.map((member) => ({
+      botId: member.bot.id,
+      name: member.bot.name,
+      color: member.bot.color,
+    })),
+  };
 }
 
 export async function resolveThreadTarget(
@@ -845,14 +848,19 @@ export async function sendThreadMessage(
         return { message, runs: [run], eventSeq: event.seq };
       }
 
-      const members = await lockAndLoadGroupMembers(tx, actor, target);
+      const { members, adminBotId } = await lockAndLoadGroupMembers(tx, actor, target);
       const memberBotIds = members.map((member) => member.botId);
       const mentionTargets = splitMentionTargets(input.mentions);
       const targetBotIds = resolveGroupTargetBotIds({
+        adminBotId,
         text: input.text ?? "",
         members: members.map((member) => ({ id: member.botId, name: member.name })),
         explicitMentions: mentionTargets.botMentionIds,
       });
+      if (!targetBotIds.length)
+        throw new IsolationError(
+          "Choose an active group administrator before sending an unmentioned message.",
+        );
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
         { prisma: tx },
         actor,
@@ -934,6 +942,11 @@ export async function sendThreadMessage(
             threadId: target.threadId,
             userId: actor.userId,
             prompt: buildSendPrompt(input.text, artifacts, connectorNames),
+            ...coordinatedRootData({
+              prompt: buildSendPrompt(input.text, artifacts, connectorNames),
+              sourceMessageId: message.id,
+              ownerAuthorized: true,
+            }),
             status: "queued",
           },
         });
@@ -1060,7 +1073,9 @@ export async function reactToThreadMessage(
       return { eventSeq: null, runs: run?.status === "waiting_takeover" ? [run] : [] };
     }
     const members =
-      target.kind === "group" ? await lockAndLoadGroupMembers(tx, actor, target) : undefined;
+      target.kind === "group"
+        ? (await lockAndLoadGroupMembers(tx, actor, target)).members
+        : undefined;
     const currentTarget = members
       ? { ...target, memberBotIds: members.map((member) => member.botId) }
       : target;
@@ -1083,6 +1098,7 @@ export async function reactToThreadMessage(
       ? await startReactionTurn(tx, actor, target.threadId, replyBotId, parent, message, {
           ...input,
           canReleaseTakeover: Boolean(releaseTakeover),
+          coordinated: target.kind === "group",
         })
       : [];
     if (target.kind === "group") await touchGroupUpdatedAt(tx, target.groupId);
@@ -1145,7 +1161,12 @@ async function startReactionTurn(
   botId: string,
   parent: { id: string; runId: string | null },
   message: { id: string; seq: number },
-  input: { reaction: MessageReaction; clientNonce: string; canReleaseTakeover: boolean },
+  input: {
+    reaction: MessageReaction;
+    clientNonce: string;
+    canReleaseTakeover: boolean;
+    coordinated?: boolean;
+  },
 ): Promise<Array<{ id: string; taskId: string; status: string }>> {
   const activeRuns = await tx.run.findMany({
     where: { threadId, botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
@@ -1214,6 +1235,13 @@ async function startReactionTurn(
       threadId,
       userId: actor.userId,
       prompt: input.reaction,
+      ...(input.coordinated
+        ? coordinatedRootData({
+            prompt: input.reaction,
+            sourceMessageId: message.id,
+            ownerAuthorized: true,
+          })
+        : {}),
       status: "queued",
     },
   });

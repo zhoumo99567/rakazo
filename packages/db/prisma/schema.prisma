@@ -496,6 +496,9 @@ model BotDeletion {
 }
 
 model ChatGroup {
+  creationKey String? @unique
+  adminBotId String?
+  createdByBotId String?
   id         String            @id @default(cuid())
   spaceId    String
   space      Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
@@ -648,6 +651,7 @@ model Task {
   runs                    Run[]
 
   @@index([spaceId, botId])
+  @@index([threadId, protocol, status])
   @@index([parentTaskId, status])
   @@index([protocol, status, updatedAt])
   @@unique([parentTaskId, workKey])

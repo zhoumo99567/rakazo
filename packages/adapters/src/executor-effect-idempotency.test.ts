@@ -164,6 +164,8 @@ function fixture(runId = "run-1") {
     ),
   };
   const prisma = {
+    $queryRaw: vi.fn(async () => [{ id: runId }]),
+    chatGroup: { findFirst: vi.fn(async () => null) },
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),

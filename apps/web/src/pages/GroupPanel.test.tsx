@@ -16,9 +16,15 @@ vi.mock("@lingui/react/macro", () => {
 // The alert dialog's Cancel closes it through onOpenChange, as Base UI does.
 let dismissDialog: (() => void) | undefined;
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { Checkbox } = await importOriginal<typeof UiWeb>();
+  const { Checkbox, Select, SelectTrigger, SelectValue, SelectContent, SelectItem } =
+    await importOriginal<typeof UiWeb>();
   return {
     Checkbox,
+    Select,
+    SelectTrigger,
+    SelectValue,
+    SelectContent,
+    SelectItem,
     BotAvatar: () => <span />,
     Button: (props: ComponentProps<"button">) => <button {...props} />,
     Input: (props: ComponentProps<"input">) => <input {...props} />,

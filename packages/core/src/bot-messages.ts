@@ -124,6 +124,7 @@ export function renderGroupMembersContext(
   groupName: string,
   members: readonly BotAddress[],
   self: Pick<BotAddress, "id" | "name">,
+  coordinated = false,
 ): string {
   const name = escapeDirectoryField(groupName.trim());
   const selfName = escapeDirectoryField(self.name.trim());
@@ -136,7 +137,9 @@ export function renderGroupMembersContext(
     ...formatBotRosterLines(members),
     "</group_members>",
     "Post in this shared thread. When another teammate is genuinely needed for a distinct next stage, use handoff_to_bot instead of telling the user to switch chats.",
-    "A handoff transfers ownership. Complete a stage handed to you yourself, then post its result here. Do not hand it back merely to report or ask the previous bot to do the same work. Never bounce a stage between members. One bot owns each stage.",
+    coordinated
+      ? "handoff_to_bot creates a child task for a current group member. You remain responsible for your task; results return automatically. Use message_bot with task_id for progress and questions. Finish your turn to wait for children; do not duplicate their work."
+      : "A handoff transfers ownership. Complete a stage handed to you yourself, then post its result here. Do not hand it back merely to report or ask the previous bot to do the same work. Never bounce a stage between members. One bot owns each stage.",
   ].join("\n");
 }
 

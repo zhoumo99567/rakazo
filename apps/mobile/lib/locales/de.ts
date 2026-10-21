@@ -1,4 +1,6 @@
 export const DE_MESSAGES: Record<string, string> = {
+  Administrator: "Administrator",
+  "First member": "Erstes Mitglied",
   "Could not cancel task": "Aufgabe konnte nicht abgebrochen werden",
   "Could not load tasks": "Aufgaben konnten nicht geladen werden",
   "No tasks": "Keine Aufgaben",

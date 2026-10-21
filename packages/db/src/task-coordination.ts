@@ -62,6 +62,26 @@ async function lockThreads(tx: Prisma.TransactionClient, ids: string[]) {
   }
 }
 
+async function assertTaskGroupMember(tx: Prisma.TransactionClient, run: TaskRunScope) {
+  const thread = await tx.thread.findUniqueOrThrow({
+    where: { id: run.threadId },
+    select: { groupId: true },
+  });
+  if (
+    thread.groupId &&
+    !(await tx.chatGroup.findFirst({
+      where: {
+        id: thread.groupId,
+        spaceId: run.spaceId,
+        userId: run.userId,
+        archivedAt: null,
+        members: { some: { botId: run.botId, bot: { archivedAt: null } } },
+      },
+    }))
+  )
+    throw new IsolationError("This bot is no longer an active group member.");
+}
+
 async function activeTask(tx: Prisma.TransactionClient, run: TaskRunScope) {
   await lockTaskTree(tx, run.taskId);
   const source = await tx.run.findFirst({
@@ -72,6 +92,7 @@ async function activeTask(tx: Prisma.TransactionClient, run: TaskRunScope) {
     throw new IsolationError("This run cannot delegate work.");
   }
   if (source.bot.archivedAt) throw new IsolationError("This bot is archived.");
+  await assertTaskGroupMember(tx, run);
   return source;
 }
 
@@ -89,6 +110,7 @@ export class TaskDelegationConflict extends Error {
 }
 
 export interface TaskDelegationOptions {
+  destinationGroupId?: string;
   botId: string;
   prompt: string;
   deliveryKey: string;
@@ -104,7 +126,8 @@ export async function delegateTask(
   run: TaskRunScope,
   input: TaskDelegationOptions,
 ) {
-  if (input.botId === run.botId) throw new Error("Cannot delegate work to yourself.");
+  if (input.botId === run.botId && !input.destinationGroupId)
+    throw new Error("Cannot delegate work to yourself.");
   if (!input.prompt.trim()) throw new Error("A task description is required.");
   return withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
@@ -113,11 +136,69 @@ export async function delegateTask(
         include: { thread: true },
       });
       if (!target?.thread) throw new IsolationError();
-      await lockThreads(tx, [run.threadId, target.thread.id]);
+      const sourceThread = await tx.thread.findUniqueOrThrow({ where: { id: run.threadId } });
+      const destinationGroup = input.destinationGroupId
+        ? await tx.chatGroup.findFirst({
+            where: {
+              id: input.destinationGroupId,
+              spaceId: run.spaceId,
+              userId: run.userId,
+              archivedAt: null,
+              adminBotId: run.botId,
+              members: { some: { botId: run.botId } },
+            },
+            include: { thread: true },
+          })
+        : null;
+      if (
+        input.destinationGroupId &&
+        (sourceThread.groupId || !destinationGroup?.thread || target.id !== run.botId)
+      )
+        throw new IsolationError("Post from a private task to a group you administer.");
+      const destinationThreadId =
+        destinationGroup?.thread?.id ?? (sourceThread.groupId ? run.threadId : target.thread.id);
+      await lockThreads(tx, [run.threadId, destinationThreadId]);
+      if (sourceThread.groupId) {
+        await tx.$queryRaw`SELECT id FROM chat_groups WHERE id = ${sourceThread.groupId} FOR UPDATE`;
+        const group = await tx.chatGroup.findFirst({
+          where: {
+            id: sourceThread.groupId,
+            spaceId: run.spaceId,
+            userId: run.userId,
+            archivedAt: null,
+            AND: [
+              { members: { some: { botId: run.botId } } },
+              { members: { some: { botId: target.id } } },
+            ],
+          },
+        });
+        if (!group)
+          throw new IsolationError("Group tasks can only be delegated to current members.");
+      }
+      if (destinationGroup) {
+        await tx.$queryRaw`SELECT id FROM chat_groups WHERE id = ${destinationGroup.id} FOR UPDATE`;
+        if (
+          !(await tx.chatGroup.findFirst({
+            where: {
+              id: destinationGroup.id,
+              adminBotId: run.botId,
+              archivedAt: null,
+              members: { some: { botId: run.botId } },
+            },
+          }))
+        )
+          throw new IsolationError("Group administrator changed.");
+      }
       const source = await activeTask(tx, run);
+      if (destinationGroup && !source.task.ownerAuthorized)
+        throw new IsolationError("Posting to a group requires a task started by the owner.");
       const existing = await tx.task.findUnique({ where: { delegationKey: input.deliveryKey } });
       if (existing) {
-        if (existing.parentTaskId !== source.task.id || existing.botId !== target.id) {
+        if (
+          existing.parentTaskId !== source.task.id ||
+          existing.botId !== target.id ||
+          existing.threadId !== destinationThreadId
+        ) {
           throw new IsolationError();
         }
         const firstRun = await tx.run.findFirst({
@@ -147,6 +228,7 @@ export async function delegateTask(
         if (previous) {
           if (
             previous.botId !== target.id ||
+            previous.threadId !== destinationThreadId ||
             previous.originalPrompt !== input.prompt ||
             previous.revisionOfTaskId !== (input.revisionOfTaskId ?? null) ||
             (input.reportIntervalMs !== undefined &&
@@ -157,7 +239,12 @@ export async function delegateTask(
         }
       }
       const siblings = await tx.task.findMany({
-        where: { parentTaskId: source.task.id, botId: target.id, status: { notIn: TERMINAL } },
+        where: {
+          parentTaskId: source.task.id,
+          botId: target.id,
+          threadId: destinationThreadId,
+          status: { notIn: TERMINAL },
+        },
         select: { id: true, status: true, originalPrompt: true },
         orderBy: { createdAt: "asc" },
       });
@@ -196,7 +283,7 @@ export async function delegateTask(
       const seen = new Set<string>();
       while (ancestor && !seen.has(ancestor.id)) {
         seen.add(ancestor.id);
-        if (ancestor.botId === target.id) {
+        if (ancestor.botId === target.id && ancestor.threadId === destinationThreadId) {
           throw new Error(
             "That bot is waiting for this work. Send a task question or finish instead.",
           );
@@ -214,7 +301,7 @@ export async function delegateTask(
           spaceId: run.spaceId,
           userId: run.userId,
           botId: target.id,
-          threadId: target.thread.id,
+          threadId: destinationThreadId,
           prompt: input.prompt,
           originalPrompt: input.prompt,
           protocol: TASK_PROTOCOL,
@@ -491,6 +578,7 @@ export async function taskRunContext(prisma: PrismaClient, run: TaskRunScope) {
     if (!task || task.protocol !== TASK_PROTOCOL) return null;
     const live = await tx.run.findFirst({ where: activeTaskRunWhere(run) });
     if (!live || TERMINAL.includes(task.status)) throw new Error("Task is no longer active.");
+    await assertTaskGroupMember(tx, run);
     const inbox = await claimInbox(tx, run, []);
     const children = await tx.task.findMany({
       where: { parentTaskId: task.id },
@@ -804,6 +892,7 @@ async function cancelTaskIds(tx: Prisma.TransactionClient, ids: string[], reason
   if (!ids.length) return [];
   const tasks = await tx.task.findMany({ where: { id: { in: ids }, status: { notIn: TERMINAL } } });
   const selected = tasks.map((task) => task.id);
+  if (!selected.length) return [];
   const now = new Date();
   await tx.task.updateMany({
     where: { id: { in: selected } },
@@ -865,10 +954,69 @@ async function cancelTaskIds(tx: Prisma.TransactionClient, ids: string[], reason
     },
     data: { status: "cancelled", finishedAt: now },
   });
-  for (const task of tasks) {
-    await deliverTaskResult(tx, { ...task, status: "cancelled", result: { text: reason } });
+  // Resolve questions once for the entire cancelled set. Only surviving parents
+  // need an outcome; internal edges must not issue one query per cancelled child.
+  await tx.taskMessage.updateMany({
+    where: {
+      kind: "question",
+      answeredAt: null,
+      OR: [{ taskId: { in: selected } }, { fromTaskId: { in: selected } }],
+    },
+    data: { answeredAt: now },
+  });
+  const selectedIds = new Set(selected);
+  const boundary = tasks.filter((task) => task.parentTaskId && !selectedIds.has(task.parentTaskId));
+  const parents = boundary.length
+    ? await tx.task.findMany({
+        where: {
+          id: { in: [...new Set(boundary.map((task) => task.parentTaskId!))] },
+          protocol: TASK_PROTOCOL,
+          status: { notIn: TERMINAL },
+        },
+        select: { id: true },
+      })
+    : [];
+  const survivingParents = new Set(parents.map((parent) => parent.id));
+  for (const task of boundary) {
+    if (survivingParents.has(task.parentTaskId!))
+      await deliverTaskResult(tx, { ...task, status: "cancelled", result: { text: reason } });
   }
   return runIds;
+}
+
+/** Cancel overlapping selections once, including live descendants of terminal parents.
+ * Callers must already hold the affected thread locks, before these tree locks.
+ */
+export async function cancelCoordinatedTasks(
+  tx: Prisma.TransactionClient,
+  taskIds: string[],
+  reason: string,
+) {
+  if (!taskIds.length) return [];
+  const tasks = await tx.task.findMany({
+    where: { id: { in: taskIds }, protocol: TASK_PROTOCOL },
+    select: { id: true, rootTaskId: true },
+  });
+  if (!tasks.length) return [];
+  const roots = [...new Set(tasks.map((task) => task.rootTaskId ?? task.id))].sort();
+  for (const rootId of roots) {
+    const key = `task-tree:${rootId}`;
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))::text`;
+  }
+  const ids = tasks.map((task) => task.id);
+  // UNION deduplicates overlapping subtrees and also terminates malformed cycles.
+  const selected = await tx.$queryRaw<Array<{ id: string }>>`
+    WITH RECURSIVE subtree AS (
+      SELECT id, "spaceId", "userId" FROM tasks WHERE id = ANY(${ids}::text[])
+      UNION
+      SELECT t.id, t."spaceId", t."userId" FROM tasks t JOIN subtree s ON t."parentTaskId" = s.id
+        WHERE t."spaceId" = s."spaceId" AND t."userId" = s."userId"
+    ) SELECT id FROM subtree`;
+  return cancelTaskIds(
+    tx,
+    selected.map((task) => task.id),
+    reason,
+  );
 }
 
 export async function cancelCoordinatedTask(

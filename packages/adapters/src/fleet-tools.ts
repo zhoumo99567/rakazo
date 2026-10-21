@@ -156,11 +156,26 @@ async function prepareCreateGroup(
   if (new Set(requested).size !== requested.length) {
     return refuse("Each bot can be in the group only once.");
   }
-  if (requested.length < GROUP_MEMBER_MIN || requested.length > GROUP_MEMBER_MAX) {
+  if (requested.length < 1 || requested.length > GROUP_MEMBER_MAX) {
     return refuse(GROUP_SIZE_ERROR);
   }
-  const members = await resolveBots(deps.prisma, run, { ids, names });
-  if ("error" in members) return members;
+  const creator = await deps.prisma.bot.findFirst({
+    where: {
+      id: run.botId,
+      spaceId: run.spaceId,
+      userId: run.userId,
+      archivedAt: null,
+      managementRole: "chief",
+    },
+    select: { id: true, name: true },
+  });
+  if (!creator) return refuse("Only a Chief can create a group.");
+  const resolved = await resolveBots(deps.prisma, run, { ids, names });
+  if ("error" in resolved) return resolved;
+  const members = [
+    { id: creator.id, name: creator.name },
+    ...resolved.filter((member) => member.id !== creator.id),
+  ];
   const groupName = singleLine(text(args.name) ?? "");
   const credential = credentialField({ name: groupName }, secrets);
   if (credential) return refuse(credential);
@@ -187,6 +202,8 @@ async function prepareUpdateGroup(
 ): Promise<FleetPrepared> {
   const group = await resolveGroup(deps.prisma, run, args);
   if ("error" in group) return group;
+  if (group.adminBotId !== run.botId)
+    return refuse("Only this group’s administrator can manage it.");
   const current: Member[] = group.members
     .filter((member) => member.bot.archivedAt === null)
     .map((member) => ({ id: member.botId, name: member.bot.name }));
@@ -212,15 +229,20 @@ async function prepareUpdateGroup(
   const credential = credentialField({ name: nextName }, secrets);
   if (credential) return refuse(credential);
   const renamed = nextName !== undefined && nextName !== group.name;
-  if (!renamed && !added.length && !removed.length) return refuse("Nothing to change.");
+  const adminBotId = text(args.admin_bot_id);
+  if (!renamed && !added.length && !removed.length && !adminBotId)
+    return refuse("Nothing to change.");
 
   const next = [...current.filter((member) => !removeIds.includes(member.id)), ...added];
   if (next.length < GROUP_MEMBER_MIN || next.length > GROUP_MEMBER_MAX) {
     return refuse(GROUP_SIZE_ERROR);
   }
+  if (!next.some((member) => member.id === (adminBotId ?? group.adminBotId)))
+    return refuse("Choose a member as administrator before removing the current administrator.");
   const membershipChanged = added.length > 0 || removed.length > 0;
   const parsed = UpdateGroupInput.safeParse({
     groupId: group.id,
+    adminBotId,
     ...(renamed ? { name: nextName } : {}),
     ...(membershipChanged ? { botIds: next.map((member) => member.id) } : {}),
     expectedBotIds: current.map((member) => member.id),
@@ -228,6 +250,10 @@ async function prepareUpdateGroup(
   if (!parsed.success) return refuse(issueMessage(parsed.error));
 
   const lines: string[] = [];
+  if (adminBotId)
+    lines.push(
+      `Administrator: ${singleLine(next.find((member) => member.id === adminBotId)!.name)}`,
+    );
   if (parsed.data.name !== undefined) lines.push(`Rename to “${singleLine(parsed.data.name)}”`);
   if (added.length) lines.push(`Add: ${memberNames(added)}`);
   if (removed.length) lines.push(`Remove: ${memberNames(removed)}`);
@@ -236,6 +262,7 @@ async function prepareUpdateGroup(
     canonical: {
       groupId: group.id,
       groupName: group.name,
+      adminBotId,
       ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
       expectedBotIds: parsed.data.expectedBotIds ?? [],
       ...(parsed.data.botIds ? { botIds: parsed.data.botIds } : {}),
@@ -452,6 +479,7 @@ type FleetBot = {
   managementRole: string;
 };
 type FleetGroup = {
+  adminBotId: string | null;
   id: string;
   name: string;
   members: Member[];
@@ -515,7 +543,7 @@ export async function listFleet(
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: FLEET_BOT_LIMIT + 1,
     }),
-    caller.fleetManagement ? visibleGroups(prisma, run) : Promise.resolve([]),
+    visibleGroups(prisma, run),
     prisma.botSection.findMany({
       where: { spaceId: run.spaceId, userId: run.userId },
       select: { name: true },
@@ -584,6 +612,7 @@ async function visibleGroups(prisma: PrismaClient, run: FleetRun): Promise<Fleet
       select: {
         id: true,
         name: true,
+        adminBotId: true,
         pinned: true,
         section: { select: { name: true } },
         members: {
@@ -603,6 +632,7 @@ async function visibleGroups(prisma: PrismaClient, run: FleetRun): Promise<Fleet
       visible.push({
         id: group.id,
         name: singleLine(group.name),
+        adminBotId: group.adminBotId ?? null,
         members,
         section: group.section ? singleLine(group.section.name) : null,
         pinned: group.pinned,
@@ -706,10 +736,26 @@ export async function createFleetGroup(
   deps: FleetDeps,
   run: FleetRun,
   canonical: Record<string, unknown>,
+  creationKey?: string,
 ): Promise<
   { groupId: string; threadId: string; name: string; members: Member[] } | { error: string }
 > {
-  const parsed = CreateGroupInput.safeParse({ name: canonical.name, botIds: canonical.botIds });
+  const creator = await deps.prisma.bot.findFirst({
+    where: {
+      id: run.botId,
+      spaceId: run.spaceId,
+      userId: run.userId,
+      archivedAt: null,
+      managementRole: "chief",
+    },
+  });
+  if (!creator) return { error: "Only a Chief can create a group." };
+  const parsed = CreateGroupInput.safeParse({
+    name: canonical.name,
+    botIds: Array.isArray(canonical.botIds)
+      ? [...new Set([run.botId, ...canonical.botIds])]
+      : canonical.botIds,
+  });
   if (!parsed.success) return { error: issueMessage(parsed.error) };
   const { name, botIds } = parsed.data;
   const wanted = new Set(botIds);
@@ -745,7 +791,12 @@ export async function createFleetGroup(
   }
   let group: Group;
   try {
-    group = await createGroupRepos(deps.prisma).createGroup(actorOf(run), { name, botIds });
+    group = await createGroupRepos(deps.prisma).createGroup(
+      actorOf(run),
+      { name, botIds },
+      run.botId,
+      creationKey,
+    );
   } catch (error) {
     return repoRefusal(error);
   }
@@ -769,6 +820,7 @@ export async function updateFleetGroup(
 > {
   const parsed = UpdateGroupInput.safeParse({
     groupId: canonical.groupId,
+    adminBotId: canonical.adminBotId,
     name: canonical.name,
     botIds: canonical.botIds,
     expectedBotIds: canonical.expectedBotIds,
@@ -776,7 +828,7 @@ export async function updateFleetGroup(
   if (!parsed.success) return { error: issueMessage(parsed.error) };
   let updated: Awaited<ReturnType<ReturnType<typeof createGroupRepos>["updateGroup"]>>;
   try {
-    updated = await createGroupRepos(deps.prisma).updateGroup(actorOf(run), parsed.data);
+    updated = await createGroupRepos(deps.prisma).updateGroup(actorOf(run), parsed.data, run.botId);
   } catch (error) {
     return repoRefusal(error);
   }
@@ -1260,7 +1312,7 @@ async function resolveBot(
   );
 }
 
-/** One active group of the user, by `group_id` or exact `group_name`. Groups have no creator. */
+/** One active group of the user, by `group_id` or exact `group_name`. */
 async function resolveGroup(prisma: PrismaClient, run: FleetRun, args: Record<string, unknown>) {
   const id = text(args.group_id);
   const name = text(args.group_name);
@@ -1276,6 +1328,7 @@ async function resolveGroup(prisma: PrismaClient, run: FleetRun, args: Record<st
     select: {
       id: true,
       name: true,
+      adminBotId: true,
       members: {
         orderBy: { createdAt: "asc" },
         select: { botId: true, bot: { select: { name: true, archivedAt: true } } },

@@ -1258,9 +1258,20 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "post_to_group",
+    description:
+      "Start work in a group you administer from this private task. Creates a child task in the group; its final result returns to this task automatically. Creating a group alone does not start work. Do not post the same unfinished work twice.",
+    inputSchema: {
+      type: "object",
+      properties: { group_id: { type: "string" }, message: { type: "string", minLength: 1 } },
+      required: ["group_id", "message"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "create_group",
     description:
-      "Create a group of 2 to 10 of this user's bots. Pass bot_ids or bot_names (exact). Needs the owner's approval.",
+      "Chief only. Create a group of 2 to 10 of this user's bots, including yourself. You automatically join as administrator. Pass other members via bot_ids or bot_names (exact). Needs the owner's approval.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1275,7 +1286,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "update_group",
     description:
-      "Rename a group or add and remove its members. Works on any group of this user, not only ones you created. Identify it by group_id or group_name (exact). A group keeps 2 to 10 members. Needs the owner's approval.",
+      "Manage a group where you are administrator: rename, add/remove members, or transfer administration to a member with admin_bot_id. Identify it by group_id or group_name (exact). A group keeps 2 to 10 members. Needs the owner's approval.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1283,6 +1294,10 @@ export const builtinAgentTools: ConnectorTool[] = [
         name: { type: "string", minLength: 1, description: "New group name." },
         add_bot_ids: { type: "array", items: { type: "string" } },
         remove_bot_ids: { type: "array", items: { type: "string" } },
+        admin_bot_id: {
+          type: "string",
+          description: "Transfer administration to this group member.",
+        },
       },
       additionalProperties: false,
     },
@@ -1395,7 +1410,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "handoff_to_bot",
     description:
-      "In a private task, assign work to another bot as a durable child task. Your task remains yours; results return automatically. An unfinished child for the same bot blocks duplicate assignment: use message_bot(task_id) to continue it. Explicit independent work needs a stable work_key and expected_active_task_ids. Stage results are not task completion. You can assign several children, continue independent work, then end the turn to wait. In a group chat, transfer the next stage to another current member as a visible handoff.",
+      "In a coordinated task, assign work to another bot as a durable child task. Your task remains yours; results return automatically. An unfinished child for the same bot blocks duplicate assignment: use message_bot(task_id) to continue it. Explicit independent work needs a stable work_key and expected_active_task_ids. Stage results are not task completion. You can assign several children, continue independent work, then end the turn to wait. In a coordinated group, children must be current members and work stays in the group. Legacy group runs use visible stage transfers.",
     inputSchema: {
       type: "object",
       properties: {

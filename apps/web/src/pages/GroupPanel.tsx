@@ -1,7 +1,17 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group } from "@rakazo/contracts";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
-import { BotAvatar, Button, Checkbox, Input } from "@rakazo/ui-web";
+import {
+  BotAvatar,
+  Button,
+  Checkbox,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { errorText } from "../lib/user-error";
@@ -225,7 +235,7 @@ export function GroupSettings({
 }: {
   group: Group;
   bots: Bot[];
-  onSave: (input: { name?: string; botIds?: string[] }) => Promise<void>;
+  onSave: (input: { name?: string; botIds?: string[]; adminBotId?: string }) => Promise<void>;
   onRemove: () => Promise<void>;
   onClose: () => void;
   onOpenBot?: (botId: string) => void;
@@ -235,6 +245,7 @@ export function GroupSettings({
   const { t } = useLingui();
   const nameId = useId();
   const [name, setName] = useState(group.name);
+  const [adminBotId, setAdminBotId] = useState(group.adminBotId ?? "");
   const [selected, setSelected] = useState(group.members.map((member) => member.botId));
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -269,6 +280,7 @@ export function GroupSettings({
     setError(null);
     try {
       await onSave({
+        ...(adminBotId && adminBotId !== group.adminBotId ? { adminBotId } : {}),
         name: name.trim() !== group.name ? name.trim() : undefined,
         botIds: sameMembers(
           selected,
@@ -318,10 +330,52 @@ export function GroupSettings({
           className="mt-2"
         />
       </label>
+      <div className="mt-4">
+        <span className="text-sm text-muted-foreground">
+          <Trans>Administrator</Trans>
+        </span>
+        <Select
+          items={[
+            ...(!group.adminBotId && !adminBotId
+              ? [{ value: "legacy", label: t`First member` }]
+              : []),
+            ...bots
+              .filter((bot) => selected.includes(bot.id) && !bot.archivedAt)
+              .map((bot) => ({ value: bot.id, label: bot.name })),
+          ]}
+          value={adminBotId || "legacy"}
+          onValueChange={(value) => {
+            if (value && value !== "legacy") setAdminBotId(value);
+          }}
+          disabled={saving}
+        >
+          <SelectTrigger aria-label={t`Administrator`} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {!group.adminBotId && !adminBotId ? (
+              <SelectItem value="legacy">
+                <Trans>First member</Trans>
+              </SelectItem>
+            ) : null}
+            {bots
+              .filter((bot) => selected.includes(bot.id) && !bot.archivedAt)
+              .map((bot) => (
+                <SelectItem key={bot.id} value={bot.id}>
+                  {bot.name}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+      </div>
       <MemberPicker bots={bots} selected={selected} onChange={setSelected} onOpenBot={onOpenBot} />
       <Button
         className="mt-5 w-full"
-        disabled={saving || !validSelection(name, selected)}
+        disabled={
+          saving ||
+          !validSelection(name, selected) ||
+          Boolean(adminBotId && !selected.includes(adminBotId))
+        }
         onClick={() => void save()}
       >
         {saving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}

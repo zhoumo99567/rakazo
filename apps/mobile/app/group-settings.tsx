@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Alert, ScrollView, Text, TextInput } from "react-native";
 import { BotMemberPicker } from "../components/bot-member-picker";
 import { glassHeaderOptions } from "../components/glass-title";
+import { MenuPicker } from "../components/menu-picker";
 import { NativeActionButton } from "../components/native-action-button";
 import type { MobileBot, MobileGroup } from "../lib/api";
 import { rpc } from "../lib/api";
@@ -19,6 +20,7 @@ export default function GroupSettingsScreen() {
   const [group, setGroup] = useState<MobileGroup | null>(null);
   const [bots, setBots] = useState<MobileBot[]>([]);
   const [name, setName] = useState("");
+  const [adminBotId, setAdminBotId] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -35,6 +37,7 @@ export default function GroupSettingsScreen() {
         if (!nextGroup) throw new Error(t("Group not found"));
         setGroup(nextGroup);
         setName(nextGroup.name);
+        setAdminBotId(nextGroup.adminBotId ?? "");
         setSelected(nextGroup.members.map((member) => member.botId));
         setBots(nextBots.filter((bot) => !bot.archivedAt));
       })
@@ -46,11 +49,14 @@ export default function GroupSettingsScreen() {
     setPending(true);
     setError(null);
     try {
-      const input: { groupId: string; name?: string; botIds?: string[] } = { groupId };
+      const input: { groupId: string; name?: string; botIds?: string[]; adminBotId?: string } = {
+        groupId,
+      };
       if (name.trim() !== group.name) input.name = name.trim();
       const memberIds = group.members.map((member) => member.botId).join(",");
       if (selected.join(",") !== memberIds) input.botIds = selected;
-      if (input.name || input.botIds) await rpc("groups/update", input);
+      if (adminBotId && adminBotId !== group.adminBotId) input.adminBotId = adminBotId;
+      if (input.name || input.botIds || input.adminBotId) await rpc("groups/update", input);
       router.back();
     } catch (err) {
       setError(errorText(err, t("Could not save group")));
@@ -99,6 +105,21 @@ export default function GroupSettingsScreen() {
             fontSize: 16,
           }}
         />
+        <MenuPicker
+          label={t("Administrator")}
+          value={adminBotId || "legacy"}
+          choices={[
+            ...(!group?.adminBotId && !adminBotId
+              ? [{ key: "legacy", label: t("First member") }]
+              : []),
+            ...bots
+              .filter((bot) => selected.includes(bot.id))
+              .map((bot) => ({ key: bot.id, label: bot.name })),
+          ]}
+          onChange={(id) => {
+            if (!pending && id !== "legacy") setAdminBotId(id);
+          }}
+        />
         {group ? (
           <BotMemberPicker
             key={group.id}
@@ -114,6 +135,7 @@ export default function GroupSettingsScreen() {
             !name.trim() ||
             selected.length < GROUP_MEMBER_MIN ||
             selected.length > GROUP_MEMBER_MAX ||
+            Boolean(adminBotId && !selected.includes(adminBotId)) ||
             pending
           }
           label={pending ? t("Saving…") : t("Save")}

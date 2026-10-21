@@ -156,6 +156,8 @@ export const GROUP_MEMBER_MIN = 2;
 export const GROUP_MEMBER_MAX = 10;
 
 export const GroupSchema = z.object({
+  adminBotId: Id.nullable().optional(),
+  createdByBotId: Id.nullable().optional(),
   id: Id,
   spaceId: Id,
   name: z.string(),
@@ -178,12 +180,14 @@ const GroupBotIds = z
   .refine((ids) => new Set(ids).size === ids.length, { error: "botIds must be distinct" });
 
 export const CreateGroupInput = z.object({
+  adminBotId: Id.optional(),
   name: z.string().trim().min(1).max(80),
   botIds: GroupBotIds,
 });
 export type CreateGroupInput = z.infer<typeof CreateGroupInput>;
 
 export const UpdateGroupInput = z.object({
+  adminBotId: Id.optional(),
   groupId: Id,
   name: z.string().trim().min(1).max(80).optional(),
   botIds: GroupBotIds.optional(),

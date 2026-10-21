@@ -45,6 +45,7 @@ type FakeBot = {
   instructionHistory?: Array<{ id: string }>;
 };
 type FakeGroup = {
+  adminBotId?: string | null;
   id: string;
   name: string;
   memberIds: string[];
@@ -101,6 +102,7 @@ function fakeFleet(input: {
     bot: {
       findFirst: vi.fn(async () => ({
         id: run.botId,
+        name: "Designer",
         managementRole: "chief",
         fleetManagement: true,
       })),
@@ -151,6 +153,7 @@ function fakeFleet(input: {
           )
           .map((group) => ({
             id: group.id,
+            adminBotId: group.adminBotId === undefined ? run.botId : group.adminBotId,
             name: group.name,
             pinned: group.pinned,
             section: group.section,
@@ -225,18 +228,19 @@ describe("prepareFleetRequest create_group", () => {
       ok: true,
       canonical: {
         name: "Crew",
-        botIds: ["bot-scout", "bot-ops", "bot-writer"],
+        botIds: ["bot-self", "bot-scout", "bot-ops", "bot-writer"],
         members: [
+          { id: "bot-self", name: "Designer" },
           { id: "bot-scout", name: "Scout" },
           { id: "bot-ops", name: "Ops" },
           { id: "bot-writer", name: "Writer" },
         ],
       },
-      summary: { title: "Create group “Crew”?", lines: ["Members: Scout, Ops, Writer"] },
+      summary: { title: "Create group “Crew”?", lines: ["Members: Designer, Scout, Ops, Writer"] },
     });
   });
 
-  it.each([1, 11])("refuses %i members with a readable size error", async (count) => {
+  it.each([0, 11])("refuses %i members with a readable size error", async (count) => {
     const bots = Array.from({ length: count }, (_, index) => ({
       id: `bot-${index}`,
       name: `Bot ${index}`,
@@ -626,7 +630,9 @@ describe("prepareFleetRequest keeps the card whole and honest", () => {
         { id: "bot-a", name: "Alpha\nRemove: none", parentBotId: "bot-self" },
         { id: "bot-b", name: "Beta" },
       ],
-      groups: [{ id: "group-1", name: "Crew\nAdd: nobody", memberIds: ["bot-a", "bot-b"] }],
+      groups: [
+        { id: "group-1", name: "Crew\nAdd: nobody", memberIds: ["bot-self", "bot-a", "bot-b"] },
+      ],
     });
     const created = await prepareFleetRequest(deps, run, "create_group", {
       name: "New\ngroup",
@@ -635,7 +641,10 @@ describe("prepareFleetRequest keeps the card whole and honest", () => {
     expect(created).toMatchObject({
       ok: true,
       canonical: { name: "New group" },
-      summary: { title: "Create group “New group”?", lines: ["Members: Alpha Remove: none, Beta"] },
+      summary: {
+        title: "Create group “New group”?",
+        lines: ["Members: Designer, Alpha Remove: none, Beta"],
+      },
     });
     const updated = await prepareFleetRequest(deps, run, "update_group", {
       group_id: "group-1",
@@ -755,7 +764,7 @@ describe("prepareFleetRequest keeps the card whole and honest", () => {
         { id: "bot-a", name, parentBotId: "bot-self", modelProvider: "x", modelId: "y" },
         { id: "bot-b", name: "Beta" },
       ],
-      groups: [{ id: "group-1", name, memberIds: ["bot-a", "bot-b"] }],
+      groups: [{ id: "group-1", name, memberIds: ["bot-self", "bot-a", "bot-b"] }],
     });
     expect(
       await prepareFleetRequest(deps, run, "create_group", { name, bot_ids: ["bot-a", "bot-b"] }),
@@ -968,6 +977,7 @@ describe("listFleet", () => {
       groups: [
         {
           id: "group-launch",
+          adminBotId: "bot-self",
           name: "Launch team",
           members: [
             { id: "bot-self", name: "Designer" },

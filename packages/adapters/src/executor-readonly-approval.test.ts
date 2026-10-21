@@ -259,7 +259,7 @@ function fixture({
           (row) => matches(row.id, where.id) && matches(row.name, where.name),
         );
       }),
-      findFirst: vi.fn(async () => ({ ...liveBot })),
+      findFirst: vi.fn(async () => ({ id: run.botId, name: bot.name, ...liveBot })),
       findUnique: vi.fn(async () => ({ ...liveBot })),
     },
     attempt: {
@@ -301,7 +301,7 @@ function fixture({
       })),
     },
     taughtSkill: { findMany: vi.fn(async () => []) },
-    chatGroup: { findMany: vi.fn(async () => []) },
+    chatGroup: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
     botSection: { findMany: vi.fn(async () => []) },
     agentSecret: { findMany: vi.fn(async () => []) },
     botSecret: { findMany: vi.fn(async () => []) },
@@ -1250,8 +1250,9 @@ describe("fleet approvals", () => {
   const modelArgs = { name: "Crew", bot_names: ["Alpha", "Beta"] };
   const approved = {
     name: "Crew",
-    botIds: ["bot-a", "bot-b"],
+    botIds: ["bot-1", "bot-a", "bot-b"],
     members: [
+      { id: "bot-1", name: "Assistant" },
       { id: "bot-a", name: "Alpha" },
       { id: "bot-b", name: "Beta" },
     ],
@@ -1279,7 +1280,7 @@ describe("fleet approvals", () => {
         blocks: [
           expect.objectContaining({
             text: "Create group “Crew”?",
-            detail: "Members: Alpha, Beta",
+            detail: "Members: Assistant, Alpha, Beta",
             actions: [
               { id: "allow", label: "Allow once" },
               { id: "deny", label: "Deny" },
@@ -1319,6 +1320,7 @@ describe("fleet approvals", () => {
       expect.anything(),
       expect.objectContaining({ spaceId: "space-1", userId: "user-1", botId: "bot-1" }),
       approved,
+      expect.any(String),
     );
     expect(f.effects[0]).toMatchObject({ status: "completed", result: created });
     expect(f.results.at(-1)).toEqual(created);

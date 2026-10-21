@@ -1010,6 +1010,7 @@ export type MobileMessage = {
 
 export type MobileGroup = Pick<
   Group,
+  | "adminBotId"
   | "id"
   | "name"
   | "preview"

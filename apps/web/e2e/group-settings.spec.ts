@@ -35,6 +35,13 @@ test("group settings shows members first, roster behind Show all", async ({ page
   await expect(panel.getByLabel("Filter bots")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "group-settings-members");
 
+  await panel.getByRole("combobox", { name: "Administrator" }).click();
+  await page.getByRole("option", { name: "Researcher", exact: true }).click();
+  await panel.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByTestId("bot-settings-trigger").click();
+  await expect(panel.getByRole("combobox", { name: "Administrator" })).toContainText("Researcher");
+  await captureScreenshot(page, testInfo, "group-administrator");
+
   // Show all expands the roster and reveals the filter.
   await panel.getByRole("button", { name: "Show all" }).click();
   await expect(panel.getByRole("checkbox")).toHaveCount(4);

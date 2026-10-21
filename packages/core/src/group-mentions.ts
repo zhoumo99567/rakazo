@@ -32,6 +32,7 @@ export function resolveGroupTargetBotIds(input: {
   members: GroupMemberRef[];
   /** Bot ids from typed mention chips (non-members are ignored for wake). */
   explicitMentions?: string[];
+  adminBotId?: string | null;
 }): string[] {
   const membersById = new Map(input.members.map((member) => [member.id, member]));
   const targetIds = new Set<string>();
@@ -49,8 +50,9 @@ export function resolveGroupTargetBotIds(input: {
     }
   }
 
-  if (targetIds.size === 0 && input.members[0]) {
-    targetIds.add(input.members[0].id);
+  if (targetIds.size === 0) {
+    const defaultId = input.adminBotId ?? input.members[0]?.id;
+    if (defaultId && membersById.has(defaultId)) targetIds.add(defaultId);
   }
 
   return [...targetIds];

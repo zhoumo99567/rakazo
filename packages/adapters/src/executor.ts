@@ -3749,7 +3749,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               run,
               LEGACY_HISTORY_WINDOW_SIZE,
               undefined,
-              run.taskId,
+              thread.groupId ? undefined : run.taskId,
               !task.parentTaskId,
             )
           : loadedMessages;
@@ -4140,10 +4140,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
         );
         const acceptsImages = deps.runtime.describe().capabilities.scripted || modelSeesImages;
         const groupContext = thread.groupId
-          ? await loadGroupContext(deps.prisma, thread.groupId, {
-              id: bot.id,
-              name: bot.name,
-            })
+          ? await loadGroupContext(
+              deps.prisma,
+              thread.groupId,
+              {
+                id: bot.id,
+                name: bot.name,
+              },
+              Boolean(coordination),
+            )
           : undefined;
         const hasMessagingIdentity = deps.messaging
           ? await deps.messaging.hasIdentity(bot.id)
@@ -4205,6 +4210,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             voiceCall,
             disabledBuiltinTools: bot.disabledBuiltinTools,
             fleetManagement: bot.fleetManagement,
+            groupAdministrator: Boolean(
+              await deps.prisma.chatGroup.findFirst({
+                where: {
+                  adminBotId: bot.id,
+                  userId: bot.userId,
+                  spaceId: bot.spaceId,
+                  archivedAt: null,
+                },
+                select: { id: true },
+              }),
+            ),
             managementRole: bot.managementRole,
             taskProtocol: task.protocol,
             ownerAuthorized: ownerStartedRun,
@@ -4712,11 +4728,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
               select: { fleetManagement: true, managementRole: true },
             });
             if (
-              botManagement
+              name === "create_group"
                 ? live?.managementRole !== "chief"
-                : name === "list_fleet"
-                  ? !live?.fleetManagement && live?.managementRole !== "chief"
-                  : !live?.fleetManagement
+                : name === "update_group"
+                  ? false
+                  : botManagement
+                    ? live?.managementRole !== "chief"
+                    : name === "list_fleet"
+                      ? !live?.fleetManagement &&
+                        live?.managementRole !== "chief" &&
+                        !(await deps.prisma.chatGroup.findFirst({
+                          where: {
+                            adminBotId: bot.id,
+                            userId: bot.userId,
+                            spaceId: bot.spaceId,
+                            archivedAt: null,
+                          },
+                          select: { id: true },
+                        }))
+                      : !live?.fleetManagement
             )
               return { error: "This tool is disabled for this bot." };
             if (!ownerStartedRun) return { error: "Fleet tools need a run you started." };
@@ -6835,7 +6865,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (name === "organize_bot")
             return finish(await organizeBot({ ...deps, runSecrets }, fleetRun, args));
           // Replay hands these the canonical request stored with the approved effect.
-          if (name === "create_group") return finish(await createFleetGroup(deps, fleetRun, args));
+          if (name === "create_group")
+            return finish(await createFleetGroup(deps, fleetRun, args, effectKey));
           if (name === "update_group") return finish(await updateFleetGroup(deps, fleetRun, args));
           if (name === "set_child_instructions") {
             return finish(await setChildInstructions(deps, fleetRun, args));
@@ -6968,8 +6999,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             );
           }
           if (["task_status", "task_cancel"].includes(name)) {
-            if (!coordination || thread.groupId || isSubagentToolExecution(executionId))
-              return finish({ error: "This tool requires an active private task." });
+            if (!coordination || isSubagentToolExecution(executionId))
+              return finish({ error: "This tool requires an active coordinated task." });
             return finish(
               name === "task_status"
                 ? await taskStatus(deps, taskScope, args.task_id ? String(args.task_id) : undefined)
@@ -6982,7 +7013,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             );
           }
           if (name === "message_bot") {
-            if (coordination && !thread.groupId) {
+            if (coordination) {
               return finish(
                 await messageTaskBot(deps, taskScope, {
                   bot_id: args.bot_id ? String(args.bot_id) : undefined,
@@ -7062,8 +7093,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (!result.ok) return finish({ error: result.error });
             return finish(result);
           }
+          if (name === "post_to_group") {
+            if (
+              !coordination ||
+              thread.groupId ||
+              !ownerStartedRun ||
+              isSubagentToolExecution(executionId)
+            )
+              return finish({ error: "Post from an owner-started private task." });
+            return finish(
+              await handoffToTaskBot(deps, taskScope, {
+                bot_id: bot.id,
+                destinationGroupId: String(args.group_id ?? ""),
+                message: redactSecrets(String(args.message ?? ""), runSecrets),
+                deliveryKey: effectKey,
+              }),
+            );
+          }
           if (name === "handoff_to_bot") {
-            if (coordination && !thread.groupId) {
+            if (coordination) {
               return finish(
                 await handoffToTaskBot(deps, taskScope, {
                   bot_id: args.bot_id ? String(args.bot_id) : undefined,
@@ -8528,6 +8576,7 @@ export function selectBuiltinToolsForRun(options: {
   disabledBuiltinTools?: readonly string[];
   /** The bot's fleet management switch. */
   fleetManagement?: boolean;
+  groupAdministrator?: boolean;
   managementRole?: string;
   taskProtocol?: string;
   ownerAuthorized?: boolean;
@@ -8539,8 +8588,8 @@ export function selectBuiltinToolsForRun(options: {
     options.ownerAuthorized ??
     isOwnerStartedRun(options.trigger, Boolean(options.followUpFromUser));
   const chief = owner && options.managementRole === "chief";
-  const groupManager = owner && Boolean(options.fleetManagement);
-  const coordinated = options.taskProtocol === TASK_PROTOCOL && !options.groupId;
+  const groupManager = owner && Boolean(options.groupAdministrator);
+  const coordinated = options.taskProtocol === TASK_PROTOCOL;
   return selectCloudAgentTools(
     selectMemoryTools(
       filterBuiltinToolsForRun(
@@ -8561,7 +8610,10 @@ export function selectBuiltinToolsForRun(options: {
     (tool) =>
       !disabled.has(tool.name) &&
       (!BOT_MANAGEMENT_TOOLS.has(tool.name) || chief) &&
-      (!["create_group", "update_group"].includes(tool.name) || groupManager) &&
+      (tool.name !== "post_to_group" ||
+        (coordinated && !options.groupId && (chief || groupManager))) &&
+      (tool.name !== "create_group" || chief) &&
+      (tool.name !== "update_group" || chief || groupManager) &&
       (!["list_fleet", "organize_bot"].includes(tool.name) || chief || groupManager) &&
       (!["task_status", "task_cancel"].includes(tool.name) || coordinated) &&
       (options.mediaImagesEnabled || tool.name !== "generate_image") &&

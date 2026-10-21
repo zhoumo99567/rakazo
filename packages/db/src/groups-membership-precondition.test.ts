@@ -29,7 +29,7 @@ function fixture(activeIds: string[]) {
   const remove = vi.fn().mockResolvedValue({ count: 2 });
   const create = vi.fn().mockResolvedValue({ count: 3 });
   const read = vi.fn(async () => {
-    expect(lock).toHaveBeenCalledOnce();
+    expect(lock).toHaveBeenCalledTimes(2);
     return {
       thread: record.thread,
       members: activeIds.map((botId) => ({ botId, bot: { archivedAt: null } })),

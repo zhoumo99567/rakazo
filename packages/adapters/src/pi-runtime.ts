@@ -1861,6 +1861,7 @@ function builtinParameters(tool: ConnectorTool) {
       name: Type.Optional(Type.String({ minLength: 1 })),
       add_bot_ids: Type.Optional(Type.Array(Type.String())),
       remove_bot_ids: Type.Optional(Type.Array(Type.String())),
+      admin_bot_id: Type.Optional(Type.String()),
     });
   }
   if (tool.name === "organize_bot") {

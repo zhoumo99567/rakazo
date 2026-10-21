@@ -12,9 +12,20 @@ export async function claimThreadRun(
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
     const current = await tx.run.findUnique({
       where: { id: runId },
-      include: { task: true, bot: true },
+      include: { task: true, bot: true, thread: { select: { groupId: true } } },
     });
     if (!current || current.threadId !== threadId) return { count: 0 };
+    if (
+      current.thread.groupId &&
+      !(await tx.chatGroup.findFirst({
+        where: {
+          id: current.thread.groupId,
+          archivedAt: null,
+          members: { some: { botId: current.botId, bot: { archivedAt: null } } },
+        },
+      }))
+    )
+      return { count: 0 };
     const coordinated = current.task.protocol === TASK_PROTOCOL;
     const occupying = await tx.run.findFirst({
       where: {

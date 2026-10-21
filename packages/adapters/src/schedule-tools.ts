@@ -35,7 +35,7 @@ export function filterBuiltinToolsForThread<T extends { name: string }>(
       (groupId || coordinated || tool.name !== "handoff_to_bot") &&
       // In a group the room is the shared surface: hand the stage to a member
       // rather than starting a private thread off to one side.
-      (!groupId || tool.name !== "message_bot"),
+      (!groupId || coordinated || tool.name !== "message_bot"),
   );
 }
 
